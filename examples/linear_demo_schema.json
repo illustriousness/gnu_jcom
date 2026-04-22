@@ -1,0 +1,38 @@
+{
+    "checksum": "sum8",
+    "fields": [
+        {
+            "chart": false,
+            "defaultValue": "1",
+            "endian": "little",
+            "name": "x",
+            "precision": 0,
+            "scale": 1,
+            "type": "u16",
+            "unit": ""
+        },
+        {
+            "chart": false,
+            "defaultValue": "2",
+            "endian": "little",
+            "name": "x2",
+            "precision": 0,
+            "scale": 1,
+            "type": "u16",
+            "unit": ""
+        },
+        {
+            "chart": false,
+            "defaultValue": "3",
+            "endian": "little",
+            "name": "x3",
+            "precision": 0,
+            "scale": 1,
+            "type": "u16",
+            "unit": ""
+        }
+    ],
+    "footer": "",
+    "header": "AA 55",
+    "name": "linear_demo"
+}

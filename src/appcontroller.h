@@ -1,10 +1,14 @@
 #pragma once
 
 #include "logmodel.h"
+#include "packetfieldmodel.h"
+#include "packetschema.h"
 #include "sendlistmodel.h"
 
 #include <QFileInfo>
+#include <QJsonObject>
 #include <QObject>
+#include <QPointF>
 #include <QSerialPort>
 #include <QSerialPortInfo>
 #include <QStringList>
@@ -33,8 +37,21 @@ class AppController final : public QObject
     Q_PROPERTY(QString defaultWorkspacePath READ defaultWorkspacePath CONSTANT)
     Q_PROPERTY(QString logExportPath READ logExportPath WRITE setLogExportPath NOTIFY logExportPathChanged)
     Q_PROPERTY(QString defaultLogExportPath READ defaultLogExportPath CONSTANT)
+    Q_PROPERTY(QString packetSchemaPath READ packetSchemaPath WRITE setPacketSchemaPath NOTIFY packetSchemaPathChanged)
+    Q_PROPERTY(QString packetSchemaName READ packetSchemaName WRITE setPacketSchemaName NOTIFY packetSchemaNameChanged)
+    Q_PROPERTY(QString packetHeaderText READ packetHeaderText WRITE setPacketHeaderText NOTIFY packetHeaderTextChanged)
+    Q_PROPERTY(QString packetFooterText READ packetFooterText WRITE setPacketFooterText NOTIFY packetFooterTextChanged)
+    Q_PROPERTY(QString packetChecksum READ packetChecksum WRITE setPacketChecksum NOTIFY packetChecksumChanged)
+    Q_PROPERTY(bool packetSchemaLoaded READ packetSchemaLoaded NOTIFY packetSchemaLoadedChanged)
+    Q_PROPERTY(int parsedFrameCount READ parsedFrameCount NOTIFY parsedFrameCountChanged)
+    Q_PROPERTY(QStringList chartSeriesNames READ chartSeriesNames NOTIFY chartSeriesNamesChanged)
+    Q_PROPERTY(double chartXMin READ chartXMin NOTIFY chartRangeChanged)
+    Q_PROPERTY(double chartXMax READ chartXMax NOTIFY chartRangeChanged)
+    Q_PROPERTY(double chartYMin READ chartYMin NOTIFY chartRangeChanged)
+    Q_PROPERTY(double chartYMax READ chartYMax NOTIFY chartRangeChanged)
     Q_PROPERTY(LogModel *logModel READ logModel CONSTANT)
     Q_PROPERTY(SendListModel *sendListModel READ sendListModel CONSTANT)
+    Q_PROPERTY(PacketFieldModel *packetFieldModel READ packetFieldModel CONSTANT)
 
 public:
     explicit AppController(QObject *parent = nullptr);
@@ -59,8 +76,21 @@ public:
     QString defaultWorkspacePath() const;
     QString logExportPath() const;
     QString defaultLogExportPath() const;
+    QString packetSchemaPath() const;
+    QString packetSchemaName() const;
+    QString packetHeaderText() const;
+    QString packetFooterText() const;
+    QString packetChecksum() const;
+    bool packetSchemaLoaded() const;
+    int parsedFrameCount() const;
+    QStringList chartSeriesNames() const;
+    double chartXMin() const;
+    double chartXMax() const;
+    double chartYMin() const;
+    double chartYMax() const;
     LogModel *logModel();
     SendListModel *sendListModel();
+    PacketFieldModel *packetFieldModel();
 
     void setSelectedPort(const QString &portName);
     void setBaudRate(int baudRate);
@@ -75,6 +105,11 @@ public:
     void setPeriodicIntervalMs(int intervalMs);
     void setWorkspacePath(const QString &path);
     void setLogExportPath(const QString &path);
+    void setPacketSchemaPath(const QString &path);
+    void setPacketSchemaName(const QString &name);
+    void setPacketHeaderText(const QString &text);
+    void setPacketFooterText(const QString &text);
+    void setPacketChecksum(const QString &checksum);
 
     Q_INVOKABLE void refreshPorts();
     Q_INVOKABLE bool openPort();
@@ -91,6 +126,11 @@ public:
     Q_INVOKABLE bool loadWorkspace(const QString &path = QString());
     Q_INVOKABLE bool saveLog(const QString &path = QString());
     Q_INVOKABLE QString convertPayloadForMode(const QString &payload, int fromMode, int toMode);
+    Q_INVOKABLE bool loadPacketSchema(const QString &path = QString());
+    Q_INVOKABLE bool savePacketSchema(const QString &path = QString());
+    Q_INVOKABLE bool applyPacketDefinition();
+    Q_INVOKABLE QString buildPacketPreview();
+    Q_INVOKABLE bool sendPacket();
     Q_INVOKABLE void clearLogs();
     Q_INVOKABLE void clearLastError();
 
@@ -113,6 +153,17 @@ signals:
     void periodicIntervalMsChanged();
     void workspacePathChanged();
     void logExportPathChanged();
+    void packetSchemaPathChanged();
+    void packetSchemaNameChanged();
+    void packetHeaderTextChanged();
+    void packetFooterTextChanged();
+    void packetChecksumChanged();
+    void packetSchemaLoadedChanged();
+    void parsedFrameCountChanged();
+    void chartSeriesNamesChanged();
+    void chartRangeChanged();
+    void chartReset();
+    void chartPointAppended(int seriesIndex, double x, double y);
 
 private:
     void setStatusMessage(const QString &message);
@@ -129,6 +180,10 @@ private:
     void scanPorts();
     void triggerReconnect();
     void stopPeriodicSendInternal(bool logEvent);
+    void resetPacketRuntimeState();
+    void processPacketBytes(const QByteArray &bytes);
+    void updateChart(const QVector<double> &numericValues);
+    void recalculateChartRange();
 
     QSerialPortInfo portInfoForName(const QString &portName) const;
     QString permissionHint(const QSerialPortInfo &portInfo) const;
@@ -140,6 +195,13 @@ private:
 
     QString normalizedWorkspacePath(const QString &path) const;
     QString normalizedLogPath(const QString &path) const;
+    QString normalizedPacketSchemaPath(const QString &path) const;
+    QString defaultPacketSchemaPath() const;
+    bool sendBytesDirect(const QByteArray &bytes, const QString &kindLabel, const QString &statusLabel);
+    bool buildEditorPacketSchema(PacketSchema *schema, QString *errorMessage = nullptr) const;
+    void setPacketRuntimeSchema(const PacketSchema &schema, bool logEvent);
+    void loadPacketEditorFromJsonObject(const QJsonObject &object);
+    QJsonObject packetEditorToJsonObject() const;
 
     QStringList m_availablePorts;
     QList<QSerialPortInfo> m_portInfos;
@@ -164,9 +226,25 @@ private:
     int m_periodicMode = 0;
     QString m_workspacePath;
     QString m_logExportPath;
+    QString m_packetSchemaPath;
+    QString m_packetSchemaName = QStringLiteral("linear_demo");
+    QString m_packetHeaderText = QStringLiteral("AA 55");
+    QString m_packetFooterText;
+    QString m_packetChecksum = QStringLiteral("sum8");
+    PacketSchema m_packetSchema;
+    QByteArray m_packetRxBuffer;
     bool m_reconnectPending = false;
     bool m_autoReconnectAttemptInFlight = false;
     QString m_lastReconnectError;
+    int m_parsedFrameCount = 0;
+    QStringList m_chartSeriesNames;
+    QVector<QVector<QPointF>> m_chartPoints;
+    int m_chartPointWindow = 256;
+    double m_chartXMin = 0.0;
+    double m_chartXMax = 256.0;
+    double m_chartYMin = -1.0;
+    double m_chartYMax = 1.0;
     LogModel m_logModel;
     SendListModel m_sendListModel;
+    PacketFieldModel m_packetFieldModel;
 };

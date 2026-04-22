@@ -35,7 +35,78 @@ ApplicationWindow {
     property var parityOptions: ["None", "Even", "Odd", "Space", "Mark"]
     property var flowOptions: ["None", "Hardware", "Software"]
     property var lineEndingOptions: ["None", "LF", "CRLF", "CR"]
+    property var packetTypeOptions: ["uint", "int", "float"]
+    property var packetByteWidthOptions: [1, 2, 4, 8]
+    property var packetEndianOptions: ["little", "big"]
+    property var packetChecksumOptions: [
+        { text: "SUM-8", value: "sum8" },
+        { text: "CRC-8", value: "crc8" },
+        { text: "CRC-8/ITU", value: "crc8_itu" },
+        { text: "CRC-8/ROHC", value: "crc8_rohc" },
+        { text: "CRC-8/MAXIM", value: "crc8_maxim" },
+        { text: "CRC-16/IBM", value: "crc16_ibm" },
+        { text: "CRC-16/MAXIM", value: "crc16_maxim" },
+        { text: "CRC-16/USB", value: "crc16_usb" },
+        { text: "CRC-16/MODBUS", value: "crc16_modbus" },
+        { text: "CRC-16/CCITT", value: "crc16_ccitt" },
+        { text: "CRC-16/CCITT-FALSE", value: "crc16_ccitt_false" },
+        { text: "CRC-16/X25", value: "crc16_x25" },
+        { text: "CRC-16/XMODEM", value: "crc16_xmodem" },
+        { text: "CRC-16/DNP", value: "crc16_dnp" },
+        { text: "CRC-32", value: "crc32" },
+        { text: "CRC-32/MPEG-2", value: "crc32_mpeg2" },
+        { text: "无校验", value: "none" }
+    ]
     property bool toolsExpanded: false
+    property bool packetPathEditorVisible: false
+    property string packetPreviewText: ""
+
+    function packetAllowedByteWidths(typeName) {
+        const normalized = typeName ? typeName.toLowerCase() : ""
+        if (normalized === "float") {
+            return [4, 8]
+        }
+        return packetByteWidthOptions
+    }
+
+    function packetChecksumOptionIndex(value) {
+        for (let i = 0; i < packetChecksumOptions.length; ++i) {
+            if (packetChecksumOptions[i].value === value) {
+                return i
+            }
+        }
+        return 0
+    }
+
+    function packetPreviewByteCount(text) {
+        const normalized = text ? text.trim() : ""
+        if (normalized.length === 0) {
+            return 0
+        }
+        return normalized.split(/\s+/).length
+    }
+
+    function appendPacketFieldPreset(baseName, byteWidth, defaultValue, typeName = "uint") {
+        if (!app) {
+            return
+        }
+
+        const nextIndex = app.packetFieldModel.count + 1
+        const fieldName = baseName + "_" + nextIndex
+        if (!app.packetFieldModel.appendField(fieldName)) {
+            return
+        }
+
+        const modelIndex = app.packetFieldModel.count - 1
+        app.packetFieldModel.setFieldType(modelIndex, typeName)
+        app.packetFieldModel.setFieldByteWidth(modelIndex, byteWidth)
+        app.packetFieldModel.setSendValue(modelIndex, String(defaultValue))
+
+        if (packetFieldView) {
+            packetFieldView.currentIndex = modelIndex
+            packetFieldView.positionViewAtEnd()
+        }
+    }
 
     function syncCombo(combo, values, value) {
         const idx = values.indexOf(value)
@@ -88,6 +159,15 @@ ApplicationWindow {
         }
     }
 
+    function refreshPacketPreview() {
+        if (!app) {
+            packetPreviewText = ""
+            return
+        }
+
+        packetPreviewText = app.buildPacketPreview()
+    }
+
     menuBar: MenuBar {
         Menu {
             title: "终端模式"
@@ -118,6 +198,7 @@ ApplicationWindow {
                     app.workspacePath = workspaceField.text
                     logPathField.text = app.defaultLogExportPath
                     app.logExportPath = logPathField.text
+                    packetSchemaPathField.text = app.packetSchemaPath
                 }
             }
         }
@@ -140,7 +221,7 @@ ApplicationWindow {
         standardButtons: Dialog.Ok
 
         contentItem: Label {
-            text: "阶段 1 是终端模式优先的 Arch / Hyprland 串口工具。\n当前重点是串口会话、发送模板、日志、工作区保存。"
+            text: "阶段 1 保持终端模式优先。\n当前已经补到基础组包、自定义接收解析和虚拟串口联调。"
             color: textStrong
             wrapMode: Text.WordWrap
             padding: 16
@@ -644,8 +725,8 @@ ApplicationWindow {
 
             Rectangle {
                 visible: window.toolsExpanded
-                Layout.preferredWidth: 360
-                Layout.minimumWidth: 320
+                Layout.preferredWidth: sideTabs.currentIndex === 1 ? 680 : 360
+                Layout.minimumWidth: sideTabs.currentIndex === 1 ? 620 : 320
                 Layout.fillHeight: true
                 color: "#e4e8ec"
                 border.color: chromeBorder
@@ -660,6 +741,7 @@ ApplicationWindow {
                         Layout.fillWidth: true
 
                         TabButton { text: "模板" }
+                        TabButton { text: "组包" }
                         TabButton { text: "工程" }
                         TabButton { text: "设置" }
                     }
@@ -751,6 +833,22 @@ ApplicationWindow {
                                     }
                                 }
 
+                                Button {
+                                    text: "发送选中模板"
+                                    Layout.fillWidth: true
+                                    enabled: sendListView.currentIndex >= 0
+                                    highlighted: true
+                                    onClicked: app.sendSavedItem(sendListView.currentIndex)
+                                }
+
+                                Label {
+                                    text: "提示：双击下面的模板列表，也会直接发送。"
+                                    color: textMuted
+                                    font.pixelSize: 10
+                                    Layout.fillWidth: true
+                                    wrapMode: Text.WordWrap
+                                }
+
                                 Rectangle {
                                     Layout.fillWidth: true
                                     Layout.fillHeight: true
@@ -831,6 +929,548 @@ ApplicationWindow {
                                 anchors.fill: parent
                                 spacing: 8
 
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 32
+                                    color: "#d8e0e8"
+                                    border.color: panelBorder
+
+                                    RowLayout {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 8
+                                        anchors.rightMargin: 8
+                                        spacing: 8
+
+                                        Label {
+                                            text: "发送数据组包"
+                                            color: textStrong
+                                            font.pixelSize: 12
+                                            font.bold: true
+                                        }
+
+                                        Rectangle {
+                                            implicitWidth: packetSchemaLoadedLabel.implicitWidth + 14
+                                            implicitHeight: 18
+                                            radius: 2
+                                            color: app.packetSchemaLoaded ? "#dff1e7" : "#f4e8cc"
+                                            border.color: app.packetSchemaLoaded ? "#a7c9b5" : "#d8c38d"
+
+                                            Label {
+                                                id: packetSchemaLoadedLabel
+                                                anchors.centerIn: parent
+                                                text: app.packetSchemaLoaded ? "解析已应用" : "解析未应用"
+                                                color: app.packetSchemaLoaded ? good : warn
+                                                font.pixelSize: 10
+                                                font.bold: true
+                                            }
+                                        }
+
+                                        Item { Layout.fillWidth: true }
+
+                                        Label {
+                                            text: "字段 " + app.packetFieldModel.count + " 项"
+                                            color: textMuted
+                                            font.pixelSize: 11
+                                        }
+
+                                        Label {
+                                            text: "已解析 " + app.parsedFrameCount + " 帧"
+                                            color: textMuted
+                                            font.pixelSize: 11
+                                        }
+                                    }
+                                }
+
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 42
+                                    color: "#eef2f6"
+                                    border.color: panelBorder
+
+                                    RowLayout {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 8
+                                        anchors.rightMargin: 8
+                                        spacing: 6
+
+                                        Label {
+                                            text: "插入字段"
+                                            color: textMuted
+                                            font.pixelSize: 11
+                                        }
+
+                                        ToolButton {
+                                            text: "帧头"
+                                            onClicked: {
+                                                if (packetHeaderField.text.length === 0) {
+                                                    packetHeaderField.text = "AA 55"
+                                                    app.packetHeaderText = packetHeaderField.text
+                                                }
+                                                packetHeaderField.forceActiveFocus()
+                                                packetHeaderField.selectAll()
+                                            }
+                                        }
+
+                                        ToolButton {
+                                            text: "帧尾"
+                                            onClicked: {
+                                                if (packetFooterField.text.length === 0) {
+                                                    packetFooterField.text = "0D 0A"
+                                                    app.packetFooterText = packetFooterField.text
+                                                }
+                                                packetFooterField.forceActiveFocus()
+                                                packetFooterField.selectAll()
+                                            }
+                                        }
+
+                                        ToolButton {
+                                            text: "帧ID"
+                                            onClicked: appendPacketFieldPreset("frame_id", 2, 1, "uint")
+                                        }
+
+                                        ToolButton {
+                                            text: "1Byte"
+                                            onClicked: appendPacketFieldPreset("data1", 1, 0, "uint")
+                                        }
+
+                                        ToolButton {
+                                            text: "2Byte"
+                                            onClicked: appendPacketFieldPreset("data2", 2, 0, "uint")
+                                        }
+
+                                        ToolButton {
+                                            text: "4Byte"
+                                            onClicked: appendPacketFieldPreset("data4", 4, 0, "uint")
+                                        }
+
+                                        ToolButton {
+                                            text: "8Byte"
+                                            onClicked: appendPacketFieldPreset("data8", 8, 0, "uint")
+                                        }
+
+                                        Item { Layout.fillWidth: true }
+                                    }
+                                }
+
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    color: "#f6f8fa"
+                                    border.color: panelBorder
+                                    implicitHeight: packetMetaLayout.implicitHeight + 18
+
+                                    ColumnLayout {
+                                        id: packetMetaLayout
+                                        anchors.fill: parent
+                                        anchors.margins: 9
+                                        spacing: 8
+
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 6
+
+                                            Label {
+                                                text: "协议名"
+                                                color: textMuted
+                                                font.pixelSize: 11
+                                            }
+
+                                            TextField {
+                                                id: packetNameField
+                                                Layout.fillWidth: true
+                                                text: app.packetSchemaName
+                                                placeholderText: "packet_demo"
+                                                onTextEdited: app.packetSchemaName = text
+                                            }
+
+                                            Button {
+                                                text: "应用解析"
+                                                highlighted: true
+                                                onClicked: app.applyPacketDefinition()
+                                            }
+
+                                            Button {
+                                                text: "发送组包"
+                                                onClicked: app.sendPacket()
+                                            }
+                                        }
+
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 6
+
+                                            Label {
+                                                text: "当前JSON"
+                                                color: textMuted
+                                                font.pixelSize: 11
+                                            }
+
+                                            Label {
+                                                Layout.fillWidth: true
+                                                text: basename(app.packetSchemaPath)
+                                                color: textStrong
+                                                font.pixelSize: 11
+                                                font.bold: true
+                                                elide: Label.ElideMiddle
+                                                verticalAlignment: Text.AlignVCenter
+                                            }
+
+                                            Button {
+                                                text: packetPathEditorVisible ? "收起路径" : "路径设置"
+                                                onClicked: packetPathEditorVisible = !packetPathEditorVisible
+                                            }
+
+                                            Button {
+                                                text: "导入JSON"
+                                                onClicked: app.loadPacketSchema(packetSchemaPathField.text)
+                                            }
+
+                                            Button {
+                                                text: "导出JSON"
+                                                onClicked: app.savePacketSchema(packetSchemaPathField.text)
+                                            }
+                                        }
+
+                                        Label {
+                                            Layout.fillWidth: true
+                                            text: app.packetSchemaPath
+                                            color: textMuted
+                                            font.pixelSize: 10
+                                            elide: Label.ElideMiddle
+                                        }
+
+                                        RowLayout {
+                                            visible: packetPathEditorVisible
+                                            Layout.fillWidth: true
+                                            spacing: 6
+
+                                            Label {
+                                                text: "路径"
+                                                color: textMuted
+                                                font.pixelSize: 11
+                                            }
+
+                                            TextField {
+                                                id: packetSchemaPathField
+                                                Layout.fillWidth: true
+                                                text: app.packetSchemaPath
+                                                placeholderText: "examples/linear_demo_schema.json"
+                                                onEditingFinished: app.packetSchemaPath = text
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+                                    color: "#fafbfc"
+                                    border.color: panelBorder
+
+                                    ColumnLayout {
+                                        anchors.fill: parent
+                                        anchors.margins: 0
+                                        spacing: 0
+
+                                        Rectangle {
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: 40
+                                            color: "#edf2f7"
+                                            border.color: panelBorder
+
+                                            RowLayout {
+                                                anchors.fill: parent
+                                                anchors.leftMargin: 8
+                                                anchors.rightMargin: 8
+                                                spacing: 8
+
+                                                Label {
+                                                    text: "帧头"
+                                                    color: textStrong
+                                                    font.pixelSize: 11
+                                                    font.bold: true
+                                                    Layout.preferredWidth: 38
+                                                }
+
+                                                TextField {
+                                                    id: packetHeaderField
+                                                    Layout.fillWidth: true
+                                                    text: app.packetHeaderText
+                                                    placeholderText: "AA 55"
+                                                    selectByMouse: true
+                                                    font.family: "Noto Sans Mono"
+                                                    inputMethodHints: Qt.ImhPreferUppercase | Qt.ImhNoPredictiveText
+                                                    onTextEdited: app.packetHeaderText = text
+                                                }
+
+                                                Label {
+                                                    text: "校验"
+                                                    color: textMuted
+                                                    font.pixelSize: 11
+                                                }
+
+                                                ComboBox {
+                                                    id: packetChecksumCombo
+                                                    Layout.preferredWidth: 188
+                                                    model: packetChecksumOptions
+                                                    textRole: "text"
+                                                    onActivated: app.packetChecksum = packetChecksumOptions[currentIndex].value
+                                                }
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: 30
+                                            color: "#e2e8ee"
+                                            border.color: panelBorder
+
+                                            RowLayout {
+                                                anchors.fill: parent
+                                                anchors.leftMargin: 8
+                                                anchors.rightMargin: 8
+                                                spacing: 6
+
+                                                Label { text: "#"; color: textMuted; font.pixelSize: 10; Layout.preferredWidth: 28 }
+                                                Label { text: "字段名称"; color: textMuted; font.pixelSize: 10; Layout.fillWidth: true }
+                                                Label { text: "类型"; color: textMuted; font.pixelSize: 10; Layout.preferredWidth: 72 }
+                                                Label { text: "字节"; color: textMuted; font.pixelSize: 10; Layout.preferredWidth: 52 }
+                                                Label { text: "发送值"; color: textMuted; font.pixelSize: 10; Layout.preferredWidth: 84 }
+                                                Label { text: "字节序"; color: textMuted; font.pixelSize: 10; Layout.preferredWidth: 72 }
+                                                Label { text: "接收值"; color: textMuted; font.pixelSize: 10; Layout.preferredWidth: 88 }
+                                                Label { text: "操作"; color: textMuted; font.pixelSize: 10; Layout.preferredWidth: 72 }
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            Layout.fillWidth: true
+                                            Layout.fillHeight: true
+                                            color: "#fafbfc"
+                                            border.color: panelBorder
+
+                                            ListView {
+                                                id: packetFieldView
+                                                anchors.fill: parent
+                                                anchors.margins: 1
+                                                clip: true
+                                                spacing: 1
+                                                model: app.packetFieldModel
+                                                ScrollBar.vertical: ScrollBar {}
+
+                                                delegate: Rectangle {
+                                                    required property int index
+                                                    required property string name
+                                                    required property string typeName
+                                                    required property int byteWidth
+                                                    required property string endian
+                                                    required property string sendValue
+                                                    required property string receivedValue
+                                                    readonly property int rowIndex: index
+
+                                                    width: packetFieldView.width
+                                                    height: 44
+                                                    color: rowIndex % 2 === 0 ? "#fbfbfc" : "#f1f4f7"
+
+                                                    RowLayout {
+                                                        anchors.fill: parent
+                                                        anchors.leftMargin: 8
+                                                        anchors.rightMargin: 8
+                                                        spacing: 6
+
+                                                        Label {
+                                                            text: String(rowIndex + 1)
+                                                            color: textMuted
+                                                            font.pixelSize: 11
+                                                            Layout.preferredWidth: 28
+                                                        }
+
+                                                        TextField {
+                                                            Layout.fillWidth: true
+                                                            Layout.minimumWidth: 90
+                                                            text: name
+                                                            placeholderText: "字段名"
+                                                            onTextEdited: app.packetFieldModel.setFieldName(rowIndex, text)
+                                                        }
+
+                                                        ComboBox {
+                                                            Layout.preferredWidth: 72
+                                                            model: packetTypeOptions
+                                                            currentIndex: {
+                                                                const idx = packetTypeOptions.indexOf(typeName)
+                                                                return idx >= 0 ? idx : 0
+                                                            }
+                                                            onActivated: function() {
+                                                                app.packetFieldModel.setFieldType(rowIndex, currentText)
+                                                            }
+                                                        }
+
+                                                        ComboBox {
+                                                            Layout.preferredWidth: 52
+                                                            model: packetAllowedByteWidths(typeName)
+                                                            currentIndex: {
+                                                                const widths = packetAllowedByteWidths(typeName)
+                                                                const idx = widths.indexOf(byteWidth)
+                                                                return idx >= 0 ? idx : 0
+                                                            }
+                                                            onActivated: function() {
+                                                                const widths = packetAllowedByteWidths(typeName)
+                                                                app.packetFieldModel.setFieldByteWidth(rowIndex, widths[currentIndex])
+                                                            }
+                                                        }
+
+                                                        TextField {
+                                                            Layout.preferredWidth: 84
+                                                            text: sendValue
+                                                            selectByMouse: true
+                                                            horizontalAlignment: Text.AlignHCenter
+                                                            font.family: "Noto Sans Mono"
+                                                            onTextEdited: app.packetFieldModel.setSendValue(rowIndex, text)
+                                                        }
+
+                                                        ComboBox {
+                                                            Layout.preferredWidth: 72
+                                                            model: packetEndianOptions
+                                                            currentIndex: endian === "big" ? 1 : 0
+                                                            enabled: byteWidth > 1
+                                                            opacity: enabled ? 1.0 : 0.45
+                                                            onActivated: function() {
+                                                                app.packetFieldModel.setFieldEndian(rowIndex, currentText)
+                                                            }
+                                                        }
+
+                                                        Label {
+                                                            Layout.preferredWidth: 88
+                                                            text: receivedValue
+                                                            color: textStrong
+                                                            font.pixelSize: 11
+                                                            elide: Label.ElideRight
+                                                        }
+
+                                                        RowLayout {
+                                                            Layout.preferredWidth: 72
+                                                            spacing: 2
+
+                                                            ToolButton {
+                                                                text: "↑"
+                                                                onClicked: app.packetFieldModel.moveFieldUp(rowIndex)
+                                                            }
+
+                                                            ToolButton {
+                                                                text: "↓"
+                                                                onClicked: app.packetFieldModel.moveFieldDown(rowIndex)
+                                                            }
+
+                                                            ToolButton {
+                                                                text: "删"
+                                                                onClicked: app.packetFieldModel.removeField(rowIndex)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: 40
+                                            color: "#edf2f7"
+                                            border.color: panelBorder
+
+                                            RowLayout {
+                                                anchors.fill: parent
+                                                anchors.leftMargin: 8
+                                                anchors.rightMargin: 8
+                                                spacing: 8
+
+                                                Label {
+                                                    text: "帧尾"
+                                                    color: textStrong
+                                                    font.pixelSize: 11
+                                                    font.bold: true
+                                                    Layout.preferredWidth: 38
+                                                }
+
+                                                TextField {
+                                                    id: packetFooterField
+                                                    Layout.fillWidth: true
+                                                    text: app.packetFooterText
+                                                    placeholderText: "可留空"
+                                                    selectByMouse: true
+                                                    font.family: "Noto Sans Mono"
+                                                    inputMethodHints: Qt.ImhPreferUppercase | Qt.ImhNoPredictiveText
+                                                    onTextEdited: app.packetFooterText = text
+                                                }
+
+                                                Label {
+                                                    text: "留空则不参与帧尾匹配"
+                                                    color: textMuted
+                                                    font.pixelSize: 11
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 74
+                                    color: "#f7f9fb"
+                                    border.color: panelBorder
+
+                                    ColumnLayout {
+                                        anchors.fill: parent
+                                        anchors.margins: 10
+                                        spacing: 4
+
+                                        RowLayout {
+                                            Layout.fillWidth: true
+
+                                            Label {
+                                                text: "组包预览"
+                                                color: textStrong
+                                                font.pixelSize: 12
+                                                font.bold: true
+                                            }
+
+                                            Item { Layout.fillWidth: true }
+
+                                            Label {
+                                                text: packetPreviewText.length > 0
+                                                      ? "长度 " + packetPreviewByteCount(packetPreviewText) + " Byte"
+                                                      : "长度 -"
+                                                color: textMuted
+                                                font.pixelSize: 11
+                                            }
+                                        }
+
+                                        Text {
+                                            id: packetPreviewBody
+                                            Layout.fillWidth: true
+                                            text: packetPreviewText.length > 0 ? packetPreviewText : "当前定义无效，无法生成预览"
+                                            color: packetPreviewText.length > 0 ? terminalText : textMuted
+                                            wrapMode: Text.WrapAnywhere
+                                            font.family: "Noto Sans Mono"
+                                            font.pixelSize: 12
+                                            maximumLineCount: 2
+                                            elide: Text.ElideRight
+                                        }
+                                    }
+                                }
+
+                                Label {
+                                    text: "说明：帧头/帧尾填 HEX；帧ID 和数据字段都可在“类型”列切成 1/2/4/8 字节；改完点“应用解析”后，接收区按当前定义解析。"
+                                    color: textMuted
+                                    font.pixelSize: 11
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                }
+                            }
+                        }
+
+                        Item {
+                            ColumnLayout {
+                                anchors.fill: parent
+                                spacing: 8
+
                                 Label {
                                     text: "工作区路径"
                                     color: textMuted
@@ -892,6 +1532,7 @@ ApplicationWindow {
                                             app.workspacePath = workspaceField.text
                                             logPathField.text = app.defaultLogExportPath
                                             app.logExportPath = logPathField.text
+                                            packetSchemaPathField.text = app.packetSchemaPath
                                         }
                                     }
                                 }
@@ -903,7 +1544,7 @@ ApplicationWindow {
                                 }
 
                                 Label {
-                                    text: "提示：当前主界面按终端模式布局，发送模板和工作区收纳到扩展面板里。"
+                                    text: "提示：当前主界面按终端模式布局，模板、组包和工作区都收纳在扩展面板里。"
                                     color: textMuted
                                     font.pixelSize: 11
                                     wrapMode: Text.WordWrap
@@ -1087,6 +1728,34 @@ ApplicationWindow {
         function onLogExportPathChanged() {
             logPathField.text = app.logExportPath
         }
+
+        function onPacketSchemaPathChanged() {
+            packetSchemaPathField.text = app.packetSchemaPath
+        }
+
+        function onPacketSchemaNameChanged() {
+            packetNameField.text = app.packetSchemaName
+            refreshPacketPreview()
+        }
+
+        function onPacketHeaderTextChanged() {
+            packetHeaderField.text = app.packetHeaderText
+            refreshPacketPreview()
+        }
+
+        function onPacketFooterTextChanged() {
+            packetFooterField.text = app.packetFooterText
+            refreshPacketPreview()
+        }
+
+        function onPacketChecksumChanged() {
+            packetChecksumCombo.currentIndex = packetChecksumOptionIndex(app.packetChecksum)
+            refreshPacketPreview()
+        }
+
+        function onPacketSchemaLoadedChanged() {
+            refreshPacketPreview()
+        }
     }
 
     Connections {
@@ -1094,6 +1763,22 @@ ApplicationWindow {
 
         function onCountChanged() {
             logView.positionViewAtEnd()
+        }
+    }
+
+    Connections {
+        target: app.packetFieldModel
+
+        function onCountChanged() {
+            refreshPacketPreview()
+        }
+
+        function onDataChanged() {
+            refreshPacketPreview()
+        }
+
+        function onModelReset() {
+            refreshPacketPreview()
         }
     }
 
@@ -1110,5 +1795,7 @@ ApplicationWindow {
         flowCombo.currentIndex = app.flowControl
         lineEndingCombo.currentIndex = app.lineEnding
         periodicIntervalBox.value = app.periodicIntervalMs
+        packetChecksumCombo.currentIndex = packetChecksumOptionIndex(app.packetChecksum)
+        refreshPacketPreview()
     }
 }

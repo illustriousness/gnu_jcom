@@ -2,12 +2,15 @@
 
 #include "payloadcodec.h"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QStandardPaths>
+
+#include <limits>
 
 namespace {
 
@@ -31,14 +34,48 @@ QString ensureParentDirectory(const QString &path)
     return info.absoluteFilePath();
 }
 
+QStringList repeatedStringList(int count, const QString &value)
+{
+    QStringList values;
+    values.reserve(count);
+    for (int index = 0; index < count; ++index) {
+        values.append(value);
+    }
+    return values;
+}
+
+QVector<PacketFieldDef> defaultPacketFields()
+{
+    auto makeField = [](const QString &name, const QString &defaultValue) {
+        PacketFieldDef field;
+        field.name = name;
+        field.type = PacketValueType::UInt;
+        field.typeName = QStringLiteral("uint");
+        field.byteWidth = 2;
+        field.endian = QStringLiteral("little");
+        field.scale = 1.0;
+        field.precision = 0;
+        field.defaultValue = defaultValue;
+        return field;
+    };
+
+    return {
+        makeField(QStringLiteral("x"), QStringLiteral("1")),
+        makeField(QStringLiteral("x2"), QStringLiteral("2")),
+        makeField(QStringLiteral("x3"), QStringLiteral("3")),
+    };
+}
+
 } // namespace
 
 AppController::AppController(QObject *parent)
     : QObject(parent)
     , m_workspacePath(defaultWorkspacePath())
     , m_logExportPath(defaultLogExportPath())
+    , m_packetSchemaPath(defaultPacketSchemaPath())
     , m_logModel(this)
     , m_sendListModel(this)
+    , m_packetFieldModel(this)
 {
     m_portScanTimer.setInterval(1000);
     m_reconnectTimer.setInterval(2000);
@@ -56,6 +93,12 @@ AppController::AppController(QObject *parent)
     m_portScanTimer.start();
     m_reconnectTimer.start();
     scanPorts();
+
+    m_packetFieldModel.setFieldDefinitions(defaultPacketFields());
+    PacketSchema initialSchema;
+    if (buildEditorPacketSchema(&initialSchema, nullptr)) {
+        setPacketRuntimeSchema(initialSchema, false);
+    }
 }
 
 QStringList AppController::availablePorts() const
@@ -160,6 +203,66 @@ QString AppController::defaultLogExportPath() const
     return documentsFallbackPath(QStringLiteral("gnu_jcom-session.log"));
 }
 
+QString AppController::packetSchemaPath() const
+{
+    return m_packetSchemaPath;
+}
+
+QString AppController::packetSchemaName() const
+{
+    return m_packetSchemaName;
+}
+
+QString AppController::packetHeaderText() const
+{
+    return m_packetHeaderText;
+}
+
+QString AppController::packetFooterText() const
+{
+    return m_packetFooterText;
+}
+
+QString AppController::packetChecksum() const
+{
+    return m_packetChecksum;
+}
+
+bool AppController::packetSchemaLoaded() const
+{
+    return m_packetSchema.isValid();
+}
+
+int AppController::parsedFrameCount() const
+{
+    return m_parsedFrameCount;
+}
+
+QStringList AppController::chartSeriesNames() const
+{
+    return m_chartSeriesNames;
+}
+
+double AppController::chartXMin() const
+{
+    return m_chartXMin;
+}
+
+double AppController::chartXMax() const
+{
+    return m_chartXMax;
+}
+
+double AppController::chartYMin() const
+{
+    return m_chartYMin;
+}
+
+double AppController::chartYMax() const
+{
+    return m_chartYMax;
+}
+
 LogModel *AppController::logModel()
 {
     return &m_logModel;
@@ -168,6 +271,11 @@ LogModel *AppController::logModel()
 SendListModel *AppController::sendListModel()
 {
     return &m_sendListModel;
+}
+
+PacketFieldModel *AppController::packetFieldModel()
+{
+    return &m_packetFieldModel;
 }
 
 void AppController::setSelectedPort(const QString &portName)
@@ -308,6 +416,63 @@ void AppController::setLogExportPath(const QString &path)
     emit logExportPathChanged();
 }
 
+void AppController::setPacketSchemaPath(const QString &path)
+{
+    const QString normalized = normalizedPacketSchemaPath(path);
+    if (normalized.isEmpty() || m_packetSchemaPath == normalized) {
+        return;
+    }
+
+    m_packetSchemaPath = normalized;
+    emit packetSchemaPathChanged();
+}
+
+void AppController::setPacketSchemaName(const QString &name)
+{
+    const QString normalized = name.trimmed();
+    if (normalized.isEmpty() || m_packetSchemaName == normalized) {
+        return;
+    }
+
+    m_packetSchemaName = normalized;
+    emit packetSchemaNameChanged();
+}
+
+void AppController::setPacketHeaderText(const QString &text)
+{
+    if (m_packetHeaderText == text) {
+        return;
+    }
+
+    m_packetHeaderText = text;
+    emit packetHeaderTextChanged();
+}
+
+void AppController::setPacketFooterText(const QString &text)
+{
+    if (m_packetFooterText == text) {
+        return;
+    }
+
+    m_packetFooterText = text;
+    emit packetFooterTextChanged();
+}
+
+void AppController::setPacketChecksum(const QString &checksum)
+{
+    const QString normalized = checksum.trimmed().toLower();
+    if (normalized.isEmpty() || !isSupportedPacketChecksum(normalized)) {
+        return;
+    }
+
+    if (m_packetChecksum == normalized) {
+        return;
+    }
+
+    m_packetChecksum = normalized;
+    emit packetChecksumChanged();
+}
+
 void AppController::refreshPorts()
 {
     scanPorts();
@@ -358,15 +523,7 @@ bool AppController::sendPayload(const QString &payload, int mode)
         return false;
     }
 
-    const qint64 queued = m_serialPort.write(bytes);
-    if (queued < 0) {
-        setLastError(QStringLiteral("Failed to queue payload: %1").arg(m_serialPort.errorString()));
-        return false;
-    }
-
-    logTransfer(QStringLiteral("tx"), bytes);
-    setStatusMessage(QStringLiteral("Sent %1 byte(s) to %2.").arg(bytes.size()).arg(m_selectedPort));
-    return true;
+    return sendBytesDirect(bytes, QStringLiteral("tx"), QString());
 }
 
 bool AppController::startPeriodicSend(const QString &payload, int mode, int intervalMs)
@@ -485,6 +642,12 @@ bool AppController::saveWorkspace(const QString &path)
         return false;
     }
 
+    QJsonArray packetSendValues;
+    const QStringList fieldValues = m_packetFieldModel.sendValues();
+    for (const QString &value : fieldValues) {
+        packetSendValues.append(value);
+    }
+
     const QJsonObject root{
         {QStringLiteral("version"), 1},
         {QStringLiteral("port"),
@@ -504,6 +667,12 @@ bool AppController::saveWorkspace(const QString &path)
              {QStringLiteral("lineEnding"), m_lineEnding},
              {QStringLiteral("periodicIntervalMs"), m_periodicIntervalMs},
              {QStringLiteral("logExportPath"), m_logExportPath},
+         }},
+        {QStringLiteral("packet"),
+         QJsonObject{
+             {QStringLiteral("schemaPath"), m_packetSchemaPath},
+             {QStringLiteral("definition"), packetEditorToJsonObject()},
+             {QStringLiteral("sendValues"), packetSendValues},
          }},
         {QStringLiteral("sendList"), m_sendListModel.toJson()},
     };
@@ -542,6 +711,7 @@ bool AppController::loadWorkspace(const QString &path)
     const QJsonObject root = document.object();
     const QJsonObject portObject = root.value(QStringLiteral("port")).toObject();
     const QJsonObject uiObject = root.value(QStringLiteral("ui")).toObject();
+    const QJsonObject packetObject = root.value(QStringLiteral("packet")).toObject();
 
     setSelectedPort(portObject.value(QStringLiteral("selectedPort")).toString());
     setBaudRate(portObject.value(QStringLiteral("baudRate")).toInt(m_baudRate));
@@ -556,6 +726,28 @@ bool AppController::loadWorkspace(const QString &path)
     setLineEnding(uiObject.value(QStringLiteral("lineEnding")).toInt(m_lineEnding));
     setPeriodicIntervalMs(uiObject.value(QStringLiteral("periodicIntervalMs")).toInt(m_periodicIntervalMs));
     setLogExportPath(uiObject.value(QStringLiteral("logExportPath")).toString(m_logExportPath));
+
+    const QString schemaPath = packetObject.value(QStringLiteral("schemaPath")).toString();
+    if (!schemaPath.trimmed().isEmpty()) {
+        setPacketSchemaPath(schemaPath);
+    }
+    const QJsonObject packetDefinition = packetObject.value(QStringLiteral("definition")).toObject();
+    if (!packetDefinition.isEmpty()) {
+        loadPacketEditorFromJsonObject(packetDefinition);
+        applyPacketDefinition();
+    } else if (!schemaPath.trimmed().isEmpty() && !loadPacketSchema(schemaPath)) {
+        return false;
+    }
+
+    QStringList packetSendValues;
+    const QJsonArray packetSendArray = packetObject.value(QStringLiteral("sendValues")).toArray();
+    packetSendValues.reserve(packetSendArray.size());
+    for (const QJsonValue &value : packetSendArray) {
+        packetSendValues.append(value.toString());
+    }
+    if (!packetSendValues.isEmpty()) {
+        m_packetFieldModel.setSendValues(packetSendValues);
+    }
 
     m_sendListModel.fromJson(root.value(QStringLiteral("sendList")).toArray());
     setWorkspacePath(targetPath);
@@ -616,6 +808,226 @@ QString AppController::convertPayloadForMode(const QString &payload, int fromMod
     return payload;
 }
 
+bool AppController::loadPacketSchema(const QString &path)
+{
+    const QString targetPath = normalizedPacketSchemaPath(path.isEmpty() ? m_packetSchemaPath : path);
+    if (targetPath.isEmpty()) {
+        setLastError(QStringLiteral("Packet schema path is empty."));
+        return false;
+    }
+
+    PacketSchema schema;
+    QString errorMessage;
+    if (!loadPacketSchemaFromFile(targetPath, &schema, &errorMessage)) {
+        setLastError(QStringLiteral("Failed to load packet schema: %1").arg(errorMessage));
+        return false;
+    }
+
+    setPacketSchemaPath(targetPath);
+    loadPacketEditorFromJsonObject(packetSchemaToJsonObject(schema));
+    setPacketRuntimeSchema(schema, true);
+    clearLastError();
+    return true;
+}
+
+bool AppController::savePacketSchema(const QString &path)
+{
+    const QString targetPath = normalizedPacketSchemaPath(path.isEmpty() ? m_packetSchemaPath : path);
+    if (targetPath.isEmpty()) {
+        setLastError(QStringLiteral("Packet schema path is empty."));
+        return false;
+    }
+
+    PacketSchema schema;
+    QString errorMessage;
+    if (!buildEditorPacketSchema(&schema, &errorMessage)) {
+        setLastError(errorMessage);
+        return false;
+    }
+
+    QFile file(ensureParentDirectory(targetPath));
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+        setLastError(QStringLiteral("Failed to save packet schema: %1").arg(file.errorString()));
+        return false;
+    }
+
+    file.write(QJsonDocument(packetSchemaToJsonObject(schema)).toJson(QJsonDocument::Indented));
+    file.close();
+
+    setPacketSchemaPath(targetPath);
+    clearLastError();
+    logInfo(QStringLiteral("Packet schema exported to %1.").arg(targetPath));
+    setStatusMessage(QStringLiteral("Packet schema saved to %1.").arg(targetPath));
+    return true;
+}
+
+bool AppController::applyPacketDefinition()
+{
+    PacketSchema schema;
+    QString errorMessage;
+    if (!buildEditorPacketSchema(&schema, &errorMessage)) {
+        setLastError(errorMessage);
+        return false;
+    }
+
+    setPacketRuntimeSchema(schema, true);
+    clearLastError();
+    return true;
+}
+
+QString AppController::buildPacketPreview()
+{
+    PacketSchema schema;
+    QString errorMessage;
+    if (!buildEditorPacketSchema(&schema, &errorMessage)) {
+        return {};
+    }
+
+    return buildPacketHexPreview(schema, m_packetFieldModel.sendValues(), &errorMessage);
+}
+
+bool AppController::sendPacket()
+{
+    PacketSchema schema;
+    QString errorMessage;
+    if (!buildEditorPacketSchema(&schema, &errorMessage)) {
+        setLastError(errorMessage);
+        return false;
+    }
+
+    const QByteArray frame = buildPacketFrame(schema, m_packetFieldModel.sendValues(), &errorMessage);
+    if (frame.isEmpty()) {
+        setLastError(errorMessage.isEmpty()
+                         ? QStringLiteral("Failed to build packet frame.")
+                         : errorMessage);
+        return false;
+    }
+
+    return sendBytesDirect(frame, QStringLiteral("tx"), QStringLiteral("Packet frame"));
+}
+
+bool AppController::buildEditorPacketSchema(PacketSchema *schema, QString *errorMessage) const
+{
+    return buildPacketSchema(m_packetSchemaName,
+                             m_packetHeaderText,
+                             m_packetFooterText,
+                             m_packetChecksum,
+                             m_packetFieldModel.fieldDefinitions(),
+                             schema,
+                             errorMessage);
+}
+
+void AppController::setPacketRuntimeSchema(const PacketSchema &schema, bool logEvent)
+{
+    const QString previousRuntimeName = m_packetSchema.name;
+    const bool previousLoaded = m_packetSchema.isValid();
+    const QStringList nextChartSeriesNames = schema.chartFieldNames();
+    const bool chartSeriesChanged = m_chartSeriesNames != nextChartSeriesNames;
+
+    m_packetSchema = schema;
+    m_chartSeriesNames = nextChartSeriesNames;
+    resetPacketRuntimeState();
+
+    if (previousLoaded != m_packetSchema.isValid()) {
+        emit packetSchemaLoadedChanged();
+    }
+    if (chartSeriesChanged) {
+        emit chartSeriesNamesChanged();
+    }
+
+    if (logEvent) {
+        logInfo(QStringLiteral("Packet parser applied: %1 (%2 field(s)).")
+                    .arg(m_packetSchema.name)
+                    .arg(m_packetSchema.fields.size()));
+        setStatusMessage(QStringLiteral("Packet parser %1 applied.").arg(m_packetSchema.name));
+    } else if (previousRuntimeName != m_packetSchema.name) {
+        setStatusMessage(QStringLiteral("Packet parser %1 ready.").arg(m_packetSchema.name));
+    }
+}
+
+void AppController::loadPacketEditorFromJsonObject(const QJsonObject &object)
+{
+    setPacketSchemaName(object.value(QStringLiteral("name")).toString(m_packetSchemaName));
+    setPacketHeaderText(object.value(QStringLiteral("header")).toString(m_packetHeaderText));
+    setPacketFooterText(object.value(QStringLiteral("footer")).toString(m_packetFooterText));
+    setPacketChecksum(object.value(QStringLiteral("checksum")).toString(m_packetChecksum));
+
+    QVector<PacketFieldDef> fields;
+    const QJsonArray fieldArray = object.value(QStringLiteral("fields")).toArray();
+    fields.reserve(fieldArray.size());
+
+    for (const QJsonValue &value : fieldArray) {
+        const QJsonObject fieldObject = value.toObject();
+        PacketFieldDef field;
+        field.name = fieldObject.value(QStringLiteral("name")).toString();
+        field.typeName = fieldObject.value(QStringLiteral("type")).toString(QStringLiteral("uint")).trimmed().toLower();
+        field.byteWidth = fieldObject.value(QStringLiteral("byteWidth"))
+                              .toInt(fieldObject.value(QStringLiteral("bytes")).toInt(0));
+        field.endian = fieldObject.value(QStringLiteral("endian")).toString(QStringLiteral("little")).trimmed().toLower();
+        field.scale = fieldObject.value(QStringLiteral("scale")).toDouble(1.0);
+        field.precision = fieldObject.contains(QStringLiteral("precision"))
+            ? fieldObject.value(QStringLiteral("precision")).toInt()
+            : -1;
+        field.unit = fieldObject.value(QStringLiteral("unit")).toString();
+        field.chart = fieldObject.value(QStringLiteral("chart")).toBool(false);
+        field.defaultValue = fieldObject.value(QStringLiteral("defaultValue")).toString(QStringLiteral("0"));
+
+        if (!normalizePacketFieldDef(&field, nullptr)) {
+            field.name = field.name.trimmed().isEmpty()
+                ? QStringLiteral("field%1").arg(fields.size() + 1)
+                : field.name.trimmed();
+            field.type = PacketValueType::UInt;
+            field.typeName = QStringLiteral("uint");
+            field.byteWidth = 2;
+            field.endian = QStringLiteral("little");
+            field.scale = 1.0;
+            field.precision = 0;
+            field.defaultValue = QStringLiteral("0");
+        }
+        if (qFuzzyIsNull(field.scale)) {
+            field.scale = 1.0;
+        }
+        if (field.name.trimmed().isEmpty()) {
+            field.name = QStringLiteral("field%1").arg(fields.size() + 1);
+        }
+        fields.append(field);
+    }
+
+    if (fields.isEmpty()) {
+        fields = defaultPacketFields();
+    }
+
+    m_packetFieldModel.setFieldDefinitions(fields);
+}
+
+QJsonObject AppController::packetEditorToJsonObject() const
+{
+    QJsonArray fieldArray;
+    const QVector<PacketFieldDef> fields = m_packetFieldModel.fieldDefinitions();
+
+    for (const PacketFieldDef &field : fields) {
+        fieldArray.append(QJsonObject{
+            {QStringLiteral("name"), field.name},
+            {QStringLiteral("type"), field.typeName},
+            {QStringLiteral("byteWidth"), field.byteWidth},
+            {QStringLiteral("endian"), field.endian},
+            {QStringLiteral("scale"), field.scale},
+            {QStringLiteral("precision"), field.precision},
+            {QStringLiteral("unit"), field.unit},
+            {QStringLiteral("chart"), field.chart},
+            {QStringLiteral("defaultValue"), field.defaultValue},
+        });
+    }
+
+    return QJsonObject{
+        {QStringLiteral("name"), m_packetSchemaName},
+        {QStringLiteral("header"), m_packetHeaderText},
+        {QStringLiteral("footer"), m_packetFooterText},
+        {QStringLiteral("checksum"), m_packetChecksum},
+        {QStringLiteral("fields"), fieldArray},
+    };
+}
+
 void AppController::clearLogs()
 {
     m_logModel.clear();
@@ -674,6 +1086,40 @@ void AppController::logTransfer(const QString &kind, const QByteArray &bytes)
     m_logModel.append(kind, PayloadCodec::asciiPreview(bytes), PayloadCodec::hexPreview(bytes));
 }
 
+bool AppController::sendBytesDirect(const QByteArray &bytes,
+                                    const QString &kindLabel,
+                                    const QString &statusLabel)
+{
+    if (!m_serialPort.isOpen()) {
+        setLastError(QStringLiteral("Open a serial port before sending data."));
+        return false;
+    }
+
+    if (bytes.isEmpty()) {
+        setLastError(QStringLiteral("Nothing to send."));
+        return false;
+    }
+
+    const qint64 queued = m_serialPort.write(bytes);
+    if (queued < 0) {
+        setLastError(QStringLiteral("Failed to queue payload: %1").arg(m_serialPort.errorString()));
+        return false;
+    }
+
+    logTransfer(kindLabel, bytes);
+    clearLastError();
+
+    if (statusLabel.isEmpty()) {
+        setStatusMessage(QStringLiteral("Sent %1 byte(s) to %2.").arg(bytes.size()).arg(m_selectedPort));
+    } else {
+        setStatusMessage(QStringLiteral("%1 sent %2 byte(s) to %3.")
+                             .arg(statusLabel)
+                             .arg(bytes.size())
+                             .arg(m_selectedPort));
+    }
+    return true;
+}
+
 void AppController::configureSerialPort()
 {
     m_serialPort.setPortName(m_selectedPort);
@@ -721,6 +1167,7 @@ bool AppController::openPortInternal(bool autoReconnectAttempt)
 
     m_lastReconnectError.clear();
     m_reconnectPending = false;
+    resetPacketRuntimeState();
     emit portOpenChanged();
 
     if (autoReconnectAttempt) {
@@ -775,6 +1222,7 @@ void AppController::handleReadyRead()
     }
 
     logTransfer(QStringLiteral("rx"), bytes);
+    processPacketBytes(bytes);
     setStatusMessage(QStringLiteral("Received %1 byte(s) from %2.").arg(bytes.size()).arg(m_selectedPort));
 }
 
@@ -858,6 +1306,163 @@ void AppController::stopPeriodicSendInternal(bool logEvent)
     if (logEvent) {
         logInfo(QStringLiteral("Periodic send stopped."));
     }
+}
+
+void AppController::resetPacketRuntimeState()
+{
+    m_packetRxBuffer.clear();
+
+    if (m_parsedFrameCount != 0) {
+        m_parsedFrameCount = 0;
+        emit parsedFrameCountChanged();
+    }
+
+    m_packetFieldModel.updateReceivedValues(repeatedStringList(m_packetFieldModel.count(), QStringLiteral("-")));
+
+    m_chartPoints.clear();
+    m_chartPoints.resize(m_chartSeriesNames.size());
+    m_chartXMin = 0.0;
+    m_chartXMax = static_cast<double>(m_chartPointWindow);
+    m_chartYMin = -1.0;
+    m_chartYMax = 1.0;
+    emit chartReset();
+    emit chartRangeChanged();
+}
+
+void AppController::processPacketBytes(const QByteArray &bytes)
+{
+    if (!m_packetSchema.isValid() || bytes.isEmpty()) {
+        return;
+    }
+
+    const QByteArray header = m_packetSchema.header;
+    const int frameSize = m_packetSchema.frameSize();
+    if (header.isEmpty() || frameSize <= 0) {
+        return;
+    }
+
+    m_packetRxBuffer.append(bytes);
+
+    const int maxBufferSize = qMax(frameSize * 8, header.size() + frameSize);
+    if (m_packetRxBuffer.size() > maxBufferSize) {
+        m_packetRxBuffer = m_packetRxBuffer.right(maxBufferSize);
+    }
+
+    while (true) {
+        const int headerIndex = m_packetRxBuffer.indexOf(header);
+        if (headerIndex < 0) {
+            const int keepBytes = qMax(0, header.size() - 1);
+            if (m_packetRxBuffer.size() > keepBytes) {
+                m_packetRxBuffer = keepBytes > 0 ? m_packetRxBuffer.right(keepBytes) : QByteArray();
+            }
+            return;
+        }
+
+        if (headerIndex > 0) {
+            m_packetRxBuffer.remove(0, headerIndex);
+        }
+
+        if (m_packetRxBuffer.size() < frameSize) {
+            return;
+        }
+
+        const QByteArray frame = m_packetRxBuffer.left(frameSize);
+        QVector<double> numericValues;
+        QStringList displayValues;
+        QString errorMessage;
+        if (!parsePacketFrame(m_packetSchema, frame, &numericValues, &displayValues, &errorMessage)) {
+            logWarn(QStringLiteral("Packet parse failed: %1").arg(errorMessage));
+            m_packetRxBuffer.remove(0, 1);
+            continue;
+        }
+
+        m_packetRxBuffer.remove(0, frameSize);
+        ++m_parsedFrameCount;
+        emit parsedFrameCountChanged();
+
+        m_packetFieldModel.updateReceivedValues(displayValues);
+        updateChart(numericValues);
+    }
+}
+
+void AppController::updateChart(const QVector<double> &numericValues)
+{
+    if (m_chartSeriesNames.isEmpty() || numericValues.isEmpty()) {
+        return;
+    }
+
+    if (m_chartPoints.size() != m_chartSeriesNames.size()) {
+        m_chartPoints.resize(m_chartSeriesNames.size());
+    }
+
+    const double xValue = static_cast<double>(qMax(0, m_parsedFrameCount - 1));
+    int seriesIndex = 0;
+
+    for (int fieldIndex = 0; fieldIndex < m_packetSchema.fields.size() && fieldIndex < numericValues.size(); ++fieldIndex) {
+        if (!m_packetSchema.fields.at(fieldIndex).chart) {
+            continue;
+        }
+
+        if (seriesIndex >= m_chartPoints.size()) {
+            break;
+        }
+
+        QVector<QPointF> &points = m_chartPoints[seriesIndex];
+        points.append(QPointF(xValue, numericValues.at(fieldIndex)));
+        while (points.size() > m_chartPointWindow) {
+            points.removeFirst();
+        }
+
+        emit chartPointAppended(seriesIndex, xValue, numericValues.at(fieldIndex));
+        ++seriesIndex;
+    }
+
+    recalculateChartRange();
+}
+
+void AppController::recalculateChartRange()
+{
+    if (m_chartPoints.isEmpty()) {
+        m_chartXMin = 0.0;
+        m_chartXMax = static_cast<double>(m_chartPointWindow);
+        m_chartYMin = -1.0;
+        m_chartYMax = 1.0;
+        emit chartRangeChanged();
+        return;
+    }
+
+    bool hasPoint = false;
+    double latestX = 0.0;
+    double minY = std::numeric_limits<double>::max();
+    double maxY = std::numeric_limits<double>::lowest();
+
+    for (const QVector<QPointF> &series : std::as_const(m_chartPoints)) {
+        for (const QPointF &point : series) {
+            hasPoint = true;
+            latestX = qMax(latestX, point.x());
+            minY = qMin(minY, point.y());
+            maxY = qMax(maxY, point.y());
+        }
+    }
+
+    if (!hasPoint) {
+        m_chartXMin = 0.0;
+        m_chartXMax = static_cast<double>(m_chartPointWindow);
+        m_chartYMin = -1.0;
+        m_chartYMax = 1.0;
+        emit chartRangeChanged();
+        return;
+    }
+
+    m_chartXMax = qMax(static_cast<double>(m_chartPointWindow), latestX + 1.0);
+    m_chartXMin = qMax(0.0, m_chartXMax - static_cast<double>(m_chartPointWindow));
+
+    const double padding = minY == maxY
+        ? qMax(1.0, qAbs(minY) * 0.15 + 0.5)
+        : (maxY - minY) * 0.12;
+    m_chartYMin = minY - padding;
+    m_chartYMax = maxY + padding;
+    emit chartRangeChanged();
 }
 
 QSerialPortInfo AppController::portInfoForName(const QString &portName) const
@@ -954,4 +1559,34 @@ QString AppController::normalizedLogPath(const QString &path) const
     }
 
     return QFileInfo(path).absoluteFilePath();
+}
+
+QString AppController::normalizedPacketSchemaPath(const QString &path) const
+{
+    if (path.trimmed().isEmpty()) {
+        return defaultPacketSchemaPath();
+    }
+
+    return QFileInfo(path).absoluteFilePath();
+}
+
+QString AppController::defaultPacketSchemaPath() const
+{
+    const QString appDir = QCoreApplication::applicationDirPath();
+    const QStringList candidates{
+        QFileInfo(appDir + QStringLiteral("/../share/gnu_jcom/examples/linear_demo_schema.json")).absoluteFilePath(),
+        QFileInfo(appDir + QStringLiteral("/../share/gnu_jcom/examples/sine_demo_schema.json")).absoluteFilePath(),
+        QFileInfo(appDir + QStringLiteral("/../examples/linear_demo_schema.json")).absoluteFilePath(),
+        QFileInfo(appDir + QStringLiteral("/../examples/sine_demo_schema.json")).absoluteFilePath(),
+        QFileInfo(appDir + QStringLiteral("/examples/linear_demo_schema.json")).absoluteFilePath(),
+        QFileInfo(appDir + QStringLiteral("/examples/sine_demo_schema.json")).absoluteFilePath(),
+    };
+
+    for (const QString &candidate : candidates) {
+        if (QFileInfo::exists(candidate)) {
+            return candidate;
+        }
+    }
+
+    return candidates.first();
 }

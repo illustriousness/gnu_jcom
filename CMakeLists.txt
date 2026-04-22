@@ -10,7 +10,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 include(GNUInstallDirs)
 include(CTest)
 
-find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Quick Qml SerialPort)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Quick Qml SerialPort Charts)
 
 if(BUILD_TESTING)
     find_package(Qt6 6.5 REQUIRED COMPONENTS Test)
@@ -23,6 +23,8 @@ qt_add_executable(gnu_jcom
     src/main.cpp
     src/appcontroller.cpp
     src/logmodel.cpp
+    src/packetfieldmodel.cpp
+    src/packetschema.cpp
     src/payloadcodec.cpp
     src/sendlistmodel.cpp
 )
@@ -30,6 +32,8 @@ qt_add_executable(gnu_jcom
 target_sources(gnu_jcom PRIVATE
     src/appcontroller.h
     src/logmodel.h
+    src/packetfieldmodel.h
+    src/packetschema.h
     src/payloadcodec.h
     src/sendlistmodel.h
 )
@@ -37,6 +41,8 @@ target_sources(gnu_jcom PRIVATE
 qt_add_qml_module(gnu_jcom
     URI GnuJCom
     VERSION 1.0
+    IMPORTS
+        QtCharts
     QML_FILES
         qml/Main.qml
 )
@@ -47,12 +53,39 @@ target_link_libraries(gnu_jcom PRIVATE
     Qt6::Quick
     Qt6::Qml
     Qt6::SerialPort
+    Qt6::Charts
 )
 
 target_include_directories(gnu_jcom PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 install(TARGETS gnu_jcom
     BUNDLE DESTINATION .
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
+install(FILES
+    examples/linear_demo_schema.json
+    examples/sine_demo_schema.json
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/gnu_jcom/examples
+)
+
+qt_add_executable(gnu_jcom_demo_device
+    tools/demo_device_main.cpp
+    src/packetschema.cpp
+)
+
+target_sources(gnu_jcom_demo_device PRIVATE
+    src/packetschema.h
+)
+
+target_include_directories(gnu_jcom_demo_device PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
+target_link_libraries(gnu_jcom_demo_device PRIVATE
+    Qt6::Core
+    Qt6::SerialPort
+)
+
+install(TARGETS gnu_jcom_demo_device
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
@@ -71,4 +104,22 @@ if(BUILD_TESTING)
     )
 
     add_test(NAME payloadcodec COMMAND gnu_jcom_payloadcodec_test)
+
+    qt_add_executable(gnu_jcom_packetschema_test
+        tests/packetschema_test.cpp
+        src/packetschema.cpp
+    )
+
+    target_sources(gnu_jcom_packetschema_test PRIVATE
+        src/packetschema.h
+    )
+
+    target_include_directories(gnu_jcom_packetschema_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
+    target_link_libraries(gnu_jcom_packetschema_test PRIVATE
+        Qt6::Core
+        Qt6::Test
+    )
+
+    add_test(NAME packetschema COMMAND gnu_jcom_packetschema_test)
 endif()

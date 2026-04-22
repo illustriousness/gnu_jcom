@@ -1,14 +1,14 @@
 #include "appcontroller.h"
 
 #include <QDebug>
-#include <QGuiApplication>
+#include <QApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQmlError>
 
 int main(int argc, char *argv[])
 {
-    QGuiApplication app(argc, argv);
+    QApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("gnu_jcom"));
     app.setApplicationDisplayName(QStringLiteral("gnu_jcom"));
     app.setOrganizationName(QStringLiteral("gnu_jcom"));

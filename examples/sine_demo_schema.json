@@ -1,0 +1,41 @@
+{
+  "name": "sine_demo",
+  "header": "AA55",
+  "checksum": "sum8",
+  "fields": [
+    {
+      "name": "seq",
+      "type": "u8",
+      "precision": 0,
+      "defaultValue": "0"
+    },
+    {
+      "name": "sine",
+      "type": "i16",
+      "scale": 0.01,
+      "precision": 2,
+      "unit": "deg",
+      "chart": true,
+      "defaultValue": "0"
+    },
+    {
+      "name": "cosine",
+      "type": "i16",
+      "scale": 0.01,
+      "precision": 2,
+      "unit": "deg",
+      "chart": true,
+      "defaultValue": "0"
+    },
+    {
+      "name": "slow",
+      "type": "i16",
+      "scale": 0.01,
+      "precision": 2,
+      "unit": "deg",
+      "chart": true,
+      "defaultValue": "0"
+    }
+  ]
+}
+
