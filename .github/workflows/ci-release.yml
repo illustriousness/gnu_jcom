@@ -67,6 +67,23 @@ jobs:
           $packageDir = Join-Path $env:GITHUB_WORKSPACE "dist/${{ matrix.artifact_name }}"
           cmake --install build --config Release --prefix "$packageDir"
 
+      - name: Verify MSVC runtime deployment
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $binDir = Join-Path $env:GITHUB_WORKSPACE "dist/${{ matrix.artifact_name }}/bin"
+          $required = @(
+            "MSVCP140.dll",
+            "VCRUNTIME140.dll",
+            "VCRUNTIME140_1.dll"
+          )
+          foreach ($dll in $required) {
+            if (-not (Test-Path (Join-Path $binDir $dll))) {
+              Write-Error "Missing runtime $dll in $binDir"
+              exit 1
+            }
+          }
+
       - name: Install (Unix)
         if: runner.os != 'Windows'
         shell: bash

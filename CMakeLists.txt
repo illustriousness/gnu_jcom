@@ -12,6 +12,12 @@ option(GNU_JCOM_ENABLE_QT_DEPLOYMENT "Bundle Qt runtime dependencies during inst
 include(GNUInstallDirs)
 include(CTest)
 
+if(WIN32 AND MSVC)
+    set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION ${CMAKE_INSTALL_BINDIR})
+    set(CMAKE_INSTALL_UCRT_LIBRARIES TRUE)
+    include(InstallRequiredSystemLibraries)
+endif()
+
 find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Quick Qml SerialPort Charts)
 
 if(BUILD_TESTING)
