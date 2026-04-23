@@ -1153,7 +1153,7 @@ ApplicationWindow {
                                                 id: packetSchemaPathField
                                                 Layout.fillWidth: true
                                                 text: app.packetSchemaPath
-                                                placeholderText: "examples/linear_demo_schema.json"
+                                                placeholderText: "examples/soc_proto_mcu_report_schema.json"
                                                 onEditingFinished: app.packetSchemaPath = text
                                             }
                                         }

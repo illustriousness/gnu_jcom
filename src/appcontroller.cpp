@@ -95,9 +95,17 @@ AppController::AppController(QObject *parent)
     scanPorts();
 
     m_packetFieldModel.setFieldDefinitions(defaultPacketFields());
-    PacketSchema initialSchema;
-    if (buildEditorPacketSchema(&initialSchema, nullptr)) {
-        setPacketRuntimeSchema(initialSchema, false);
+    if (!m_packetSchemaPath.isEmpty() && QFileInfo::exists(m_packetSchemaPath)) {
+        if (!loadPacketSchema(m_packetSchemaPath)) {
+            clearLastError();
+        }
+    }
+
+    if (!m_packetSchema.isValid()) {
+        PacketSchema initialSchema;
+        if (buildEditorPacketSchema(&initialSchema, nullptr)) {
+            setPacketRuntimeSchema(initialSchema, false);
+        }
     }
 }
 
@@ -912,6 +920,7 @@ bool AppController::buildEditorPacketSchema(PacketSchema *schema, QString *error
                              m_packetHeaderText,
                              m_packetFooterText,
                              m_packetChecksum,
+                             m_packetChecksumStart,
                              m_packetFieldModel.fieldDefinitions(),
                              schema,
                              errorMessage);
@@ -951,6 +960,7 @@ void AppController::loadPacketEditorFromJsonObject(const QJsonObject &object)
     setPacketHeaderText(object.value(QStringLiteral("header")).toString(m_packetHeaderText));
     setPacketFooterText(object.value(QStringLiteral("footer")).toString(m_packetFooterText));
     setPacketChecksum(object.value(QStringLiteral("checksum")).toString(m_packetChecksum));
+    m_packetChecksumStart = object.value(QStringLiteral("checksumStart")).toInt(0);
 
     QVector<PacketFieldDef> fields;
     const QJsonArray fieldArray = object.value(QStringLiteral("fields")).toArray();
@@ -1024,6 +1034,7 @@ QJsonObject AppController::packetEditorToJsonObject() const
         {QStringLiteral("header"), m_packetHeaderText},
         {QStringLiteral("footer"), m_packetFooterText},
         {QStringLiteral("checksum"), m_packetChecksum},
+        {QStringLiteral("checksumStart"), m_packetChecksumStart},
         {QStringLiteral("fields"), fieldArray},
     };
 }
@@ -1574,10 +1585,13 @@ QString AppController::defaultPacketSchemaPath() const
 {
     const QString appDir = QCoreApplication::applicationDirPath();
     const QStringList candidates{
+        QFileInfo(appDir + QStringLiteral("/../share/gnu_jcom/examples/soc_proto_mcu_report_schema.json")).absoluteFilePath(),
         QFileInfo(appDir + QStringLiteral("/../share/gnu_jcom/examples/linear_demo_schema.json")).absoluteFilePath(),
         QFileInfo(appDir + QStringLiteral("/../share/gnu_jcom/examples/sine_demo_schema.json")).absoluteFilePath(),
+        QFileInfo(appDir + QStringLiteral("/../examples/soc_proto_mcu_report_schema.json")).absoluteFilePath(),
         QFileInfo(appDir + QStringLiteral("/../examples/linear_demo_schema.json")).absoluteFilePath(),
         QFileInfo(appDir + QStringLiteral("/../examples/sine_demo_schema.json")).absoluteFilePath(),
+        QFileInfo(appDir + QStringLiteral("/examples/soc_proto_mcu_report_schema.json")).absoluteFilePath(),
         QFileInfo(appDir + QStringLiteral("/examples/linear_demo_schema.json")).absoluteFilePath(),
         QFileInfo(appDir + QStringLiteral("/examples/sine_demo_schema.json")).absoluteFilePath(),
     };

@@ -231,6 +231,7 @@ private:
     QString m_packetHeaderText = QStringLiteral("AA 55");
     QString m_packetFooterText;
     QString m_packetChecksum = QStringLiteral("sum8");
+    int m_packetChecksumStart = 0;
     PacketSchema m_packetSchema;
     QByteArray m_packetRxBuffer;
     bool m_reconnectPending = false;

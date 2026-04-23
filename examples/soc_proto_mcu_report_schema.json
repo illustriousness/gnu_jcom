@@ -1,0 +1,266 @@
+{
+    "name": "soc_proto_mcu_report",
+    "header": "AA55",
+    "checksum": "crc16_ccitt_false_le",
+    "checksumStart": 2,
+    "fields": [
+        {
+            "name": "body_len",
+            "type": "u8",
+            "precision": 0,
+            "defaultValue": "73"
+        },
+        {
+            "name": "cmd",
+            "type": "u8",
+            "precision": 0,
+            "defaultValue": "1"
+        },
+        {
+            "name": "v_real",
+            "type": "i16",
+            "endian": "little",
+            "precision": 0,
+            "chart": true,
+            "defaultValue": "0"
+        },
+        {
+            "name": "w_real",
+            "type": "i16",
+            "endian": "little",
+            "precision": 0,
+            "chart": true,
+            "defaultValue": "0"
+        },
+        {
+            "name": "imu_accel_x",
+            "type": "i16",
+            "endian": "little",
+            "precision": 0,
+            "defaultValue": "0"
+        },
+        {
+            "name": "imu_accel_y",
+            "type": "i16",
+            "endian": "little",
+            "precision": 0,
+            "defaultValue": "0"
+        },
+        {
+            "name": "imu_accel_z",
+            "type": "i16",
+            "endian": "little",
+            "precision": 0,
+            "defaultValue": "0"
+        },
+        {
+            "name": "imu_gyro_x",
+            "type": "i16",
+            "endian": "little",
+            "precision": 0,
+            "defaultValue": "0"
+        },
+        {
+            "name": "imu_gyro_y",
+            "type": "i16",
+            "endian": "little",
+            "precision": 0,
+            "defaultValue": "0"
+        },
+        {
+            "name": "imu_gyro_z",
+            "type": "i16",
+            "endian": "little",
+            "precision": 0,
+            "defaultValue": "0"
+        },
+        {
+            "name": "imu_yaw",
+            "type": "i16",
+            "endian": "little",
+            "precision": 0,
+            "chart": true,
+            "defaultValue": "0"
+        },
+        {
+            "name": "imu_pitch",
+            "type": "i16",
+            "endian": "little",
+            "precision": 0,
+            "chart": true,
+            "defaultValue": "0"
+        },
+        {
+            "name": "imu_roll",
+            "type": "i16",
+            "endian": "little",
+            "precision": 0,
+            "chart": true,
+            "defaultValue": "0"
+        },
+        {
+            "name": "imu_temperature",
+            "type": "i16",
+            "endian": "little",
+            "precision": 0,
+            "defaultValue": "0"
+        },
+        {
+            "name": "left_speed",
+            "type": "i16",
+            "endian": "little",
+            "precision": 0,
+            "chart": true,
+            "defaultValue": "0"
+        },
+        {
+            "name": "left_current",
+            "type": "u16",
+            "endian": "little",
+            "precision": 0,
+            "defaultValue": "0"
+        },
+        {
+            "name": "left_encoder",
+            "type": "i32",
+            "endian": "little",
+            "precision": 0,
+            "defaultValue": "0"
+        },
+        {
+            "name": "left_fault_code",
+            "type": "u16",
+            "endian": "little",
+            "precision": 0,
+            "defaultValue": "0"
+        },
+        {
+            "name": "left_reserve",
+            "type": "u16",
+            "endian": "little",
+            "precision": 0,
+            "defaultValue": "0"
+        },
+        {
+            "name": "right_speed",
+            "type": "i16",
+            "endian": "little",
+            "precision": 0,
+            "chart": true,
+            "defaultValue": "0"
+        },
+        {
+            "name": "right_current",
+            "type": "u16",
+            "endian": "little",
+            "precision": 0,
+            "defaultValue": "0"
+        },
+        {
+            "name": "right_encoder",
+            "type": "i32",
+            "endian": "little",
+            "precision": 0,
+            "defaultValue": "0"
+        },
+        {
+            "name": "right_fault_code",
+            "type": "u16",
+            "endian": "little",
+            "precision": 0,
+            "defaultValue": "0"
+        },
+        {
+            "name": "right_reserve",
+            "type": "u16",
+            "endian": "little",
+            "precision": 0,
+            "defaultValue": "0"
+        },
+        {
+            "name": "cut_speed",
+            "type": "i16",
+            "endian": "little",
+            "precision": 0,
+            "chart": true,
+            "defaultValue": "0"
+        },
+        {
+            "name": "cut_current",
+            "type": "u16",
+            "endian": "little",
+            "precision": 0,
+            "defaultValue": "0"
+        },
+        {
+            "name": "cut_encoder",
+            "type": "i32",
+            "endian": "little",
+            "precision": 0,
+            "defaultValue": "0"
+        },
+        {
+            "name": "cut_fault_code",
+            "type": "u16",
+            "endian": "little",
+            "precision": 0,
+            "defaultValue": "0"
+        },
+        {
+            "name": "cut_reserve",
+            "type": "u16",
+            "endian": "little",
+            "precision": 0,
+            "defaultValue": "0"
+        },
+        {
+            "name": "battery_soc",
+            "type": "u8",
+            "precision": 0,
+            "unit": "%",
+            "chart": true,
+            "defaultValue": "0"
+        },
+        {
+            "name": "battery_reserve",
+            "type": "u8",
+            "precision": 0,
+            "defaultValue": "0"
+        },
+        {
+            "name": "battery_temperature",
+            "type": "i16",
+            "endian": "little",
+            "precision": 0,
+            "defaultValue": "0"
+        },
+        {
+            "name": "system_flags",
+            "type": "u16",
+            "endian": "little",
+            "precision": 0,
+            "defaultValue": "0"
+        },
+        {
+            "name": "sensor_flags",
+            "type": "u16",
+            "endian": "little",
+            "precision": 0,
+            "defaultValue": "0"
+        },
+        {
+            "name": "module_fault_flags",
+            "type": "u16",
+            "endian": "little",
+            "precision": 0,
+            "defaultValue": "0"
+        },
+        {
+            "name": "key_event_flags",
+            "type": "u16",
+            "endian": "little",
+            "precision": 0,
+            "defaultValue": "0"
+        }
+    ]
+}

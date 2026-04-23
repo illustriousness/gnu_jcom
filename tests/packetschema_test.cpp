@@ -12,6 +12,7 @@ private slots:
     void parsesFrame();
     void supportsU64WithFooter();
     void supportsGenericFieldTypes();
+    void supportsChecksumStartOffset();
     void computesCommonCrcs();
 };
 
@@ -154,6 +155,39 @@ void PacketSchemaTest::supportsGenericFieldTypes()
     QCOMPARE(displayValues.at(2), QStringLiteral("3.25"));
 }
 
+void PacketSchemaTest::supportsChecksumStartOffset()
+{
+    const QByteArray json = R"({
+        "name": "len_crc_demo",
+        "header": "AA55",
+        "checksum": "crc16_ccitt_false_le",
+        "checksumStart": 2,
+        "fields": [
+            {"name":"len","type":"u8","precision":0,"defaultValue":"2"},
+            {"name":"value","type":"u16","endian":"little","precision":0,"defaultValue":"0"}
+        ]
+    })";
+
+    PacketSchema schema;
+    QString errorMessage;
+    QVERIFY(loadPacketSchemaFromJson(json, &schema, &errorMessage));
+    QVERIFY(errorMessage.isEmpty());
+    QCOMPARE(schema.checksumStart, 2);
+
+    const QByteArray frame = buildPacketFrame(schema,
+                                              {QStringLiteral("2"), QStringLiteral("4660")},
+                                              &errorMessage);
+    QVERIFY(errorMessage.isEmpty());
+    QCOMPARE(frame.toHex().toUpper(), QByteArray("AA55023412DE59"));
+
+    QVector<double> numericValues;
+    QStringList displayValues;
+    QVERIFY(parsePacketFrame(schema, frame, &numericValues, &displayValues, &errorMessage));
+    QVERIFY(errorMessage.isEmpty());
+    QCOMPARE(displayValues.at(0), QStringLiteral("2"));
+    QCOMPARE(displayValues.at(1), QStringLiteral("4660"));
+}
+
 void PacketSchemaTest::computesCommonCrcs()
 {
     QString errorMessage;
@@ -173,6 +207,12 @@ void PacketSchemaTest::computesCommonCrcs()
                  .toHex()
                  .toUpper(),
              QByteArray("29B1"));
+    QVERIFY(errorMessage.isEmpty());
+
+    QCOMPARE(buildPacketChecksumBytes(QStringLiteral("crc16_ccitt_false_le"), QByteArray("123456789"), &errorMessage)
+                 .toHex()
+                 .toUpper(),
+             QByteArray("B129"));
     QVERIFY(errorMessage.isEmpty());
 
     QCOMPARE(buildPacketChecksumBytes(QStringLiteral("crc32"), QByteArray("123456789"), &errorMessage)

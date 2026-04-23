@@ -37,6 +37,7 @@ constexpr PacketChecksumDef kPacketChecksumDefs[] = {
     {"crc16_modbus", 16, 0x8005, 0xFFFF, true, true, 0x0000, true, false},
     {"crc16_ccitt", 16, 0x1021, 0x0000, true, true, 0x0000, true, false},
     {"crc16_ccitt_false", 16, 0x1021, 0xFFFF, false, false, 0x0000, false, false},
+    {"crc16_ccitt_false_le", 16, 0x1021, 0xFFFF, false, false, 0x0000, true, false},
     {"crc16_x25", 16, 0x1021, 0xFFFF, true, true, 0xFFFF, true, false},
     {"crc16_xmodem", 16, 0x1021, 0x0000, false, false, 0x0000, false, false},
     {"crc16_dnp", 16, 0x3D65, 0x0000, true, true, 0xFFFF, true, false},
@@ -654,6 +655,8 @@ bool PacketSchema::isValid() const
     return !name.isEmpty()
         && !header.isEmpty()
         && !fields.isEmpty()
+        && checksumStart >= 0
+        && checksumStart <= header.size() + payloadSize()
         && isSupportedPacketChecksum(checksum);
 }
 
@@ -828,6 +831,7 @@ bool loadPacketSchemaFromJson(const QByteArray &jsonBytes,
     PacketSchema parsedSchema;
     parsedSchema.name = root.value(QStringLiteral("name")).toString();
     parsedSchema.checksum = root.value(QStringLiteral("checksum")).toString(QStringLiteral("sum8")).trimmed().toLower();
+    parsedSchema.checksumStart = root.value(QStringLiteral("checksumStart")).toInt(0);
 
     parsedSchema.header = parseHexBytes(root.value(QStringLiteral("header")).toString(),
                                         QStringLiteral("Packet header"),
@@ -909,6 +913,15 @@ bool loadPacketSchemaFromJson(const QByteArray &jsonBytes,
         return false;
     }
 
+    if (parsedSchema.checksumStart < 0
+        || parsedSchema.checksumStart > parsedSchema.header.size() + parsedSchema.payloadSize()) {
+        if (errorMessage != nullptr) {
+            *errorMessage = QStringLiteral("checksumStart %1 is outside the frame payload range.")
+                                .arg(parsedSchema.checksumStart);
+        }
+        return false;
+    }
+
     if (schema != nullptr) {
         *schema = parsedSchema;
     }
@@ -934,6 +947,7 @@ bool buildPacketSchema(const QString &name,
                        const QString &headerText,
                        const QString &footerText,
                        const QString &checksum,
+                       int checksumStart,
                        const QVector<PacketFieldDef> &fields,
                        PacketSchema *schema,
                        QString *errorMessage)
@@ -967,6 +981,7 @@ bool buildPacketSchema(const QString &name,
         {QStringLiteral("header"), headerText},
         {QStringLiteral("footer"), footerText},
         {QStringLiteral("checksum"), checksum},
+        {QStringLiteral("checksumStart"), checksumStart},
         {QStringLiteral("fields"), fieldArray},
     };
 
@@ -1007,6 +1022,7 @@ QJsonObject packetSchemaToJsonObject(const PacketSchema &schema)
         {QStringLiteral("header"), packetHeaderText(schema.header)},
         {QStringLiteral("footer"), packetHeaderText(schema.footer)},
         {QStringLiteral("checksum"), schema.checksum},
+        {QStringLiteral("checksumStart"), schema.checksumStart},
         {QStringLiteral("fields"), fieldArray},
     };
 }
@@ -1042,7 +1058,17 @@ QByteArray buildPacketFrame(const PacketSchema &schema,
         frame.append(encoded);
     }
 
-    const QByteArray checksumBytes = buildPacketChecksumBytes(schema.checksum, frame, errorMessage);
+    if (schema.checksumStart < 0 || schema.checksumStart > frame.size()) {
+        if (errorMessage != nullptr) {
+            *errorMessage = QStringLiteral("checksumStart %1 is outside the frame payload range.")
+                                .arg(schema.checksumStart);
+        }
+        return {};
+    }
+
+    const QByteArray checksumBytes = buildPacketChecksumBytes(schema.checksum,
+                                                              frame.mid(schema.checksumStart),
+                                                              errorMessage);
     if (packetChecksumSize(schema.checksum) > 0 && checksumBytes.size() != packetChecksumSize(schema.checksum)) {
         return {};
     }
@@ -1119,10 +1145,19 @@ bool parsePacketFrame(const PacketSchema &schema,
 
     if (checksumSize > 0) {
         const int checksumIndex = frame.size() - schema.footer.size() - checksumSize;
+        if (schema.checksumStart < 0 || schema.checksumStart > checksumIndex) {
+            if (errorMessage != nullptr) {
+                *errorMessage = QStringLiteral("checksumStart %1 is outside the checksum range.")
+                                    .arg(schema.checksumStart);
+            }
+            return false;
+        }
+
         QString checksumError;
         QString *checksumErrorPtr = errorMessage != nullptr ? errorMessage : &checksumError;
         const QByteArray expected = buildPacketChecksumBytes(schema.checksum,
-                                                             frame.left(checksumIndex),
+                                                             frame.mid(schema.checksumStart,
+                                                                       checksumIndex - schema.checksumStart),
                                                              checksumErrorPtr);
         if (!checksumErrorPtr->isEmpty()) {
             return false;

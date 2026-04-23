@@ -31,6 +31,7 @@ struct PacketSchema {
     QByteArray header;
     QByteArray footer;
     QString checksum = QStringLiteral("sum8");
+    int checksumStart = 0;
     QVector<PacketFieldDef> fields;
 
     bool isValid() const;
@@ -60,6 +61,7 @@ bool buildPacketSchema(const QString &name,
                        const QString &headerText,
                        const QString &footerText,
                        const QString &checksum,
+                       int checksumStart,
                        const QVector<PacketFieldDef> &fields,
                        PacketSchema *schema,
                        QString *errorMessage = nullptr);
