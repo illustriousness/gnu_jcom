@@ -5,6 +5,7 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQmlError>
+#include <QUrl>
 
 int main(int argc, char *argv[])
 {
@@ -28,7 +29,7 @@ int main(int argc, char *argv[])
         &app,
         []() { QCoreApplication::exit(EXIT_FAILURE); },
         Qt::QueuedConnection);
-    engine.loadFromModule(QStringLiteral("GnuJCom"), QStringLiteral("Main"));
+    engine.load(QUrl(QStringLiteral("qrc:/qt/qml/GnuJCom/qml/Main.qml")));
 
     return app.exec();
 }
