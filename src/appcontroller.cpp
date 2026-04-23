@@ -1585,6 +1585,9 @@ QString AppController::defaultPacketSchemaPath() const
 {
     const QString appDir = QCoreApplication::applicationDirPath();
     const QStringList candidates{
+        QFileInfo(appDir + QStringLiteral("/../../../share/gnu_jcom/examples/soc_proto_mcu_report_schema.json")).absoluteFilePath(),
+        QFileInfo(appDir + QStringLiteral("/../../../share/gnu_jcom/examples/linear_demo_schema.json")).absoluteFilePath(),
+        QFileInfo(appDir + QStringLiteral("/../../../share/gnu_jcom/examples/sine_demo_schema.json")).absoluteFilePath(),
         QFileInfo(appDir + QStringLiteral("/../share/gnu_jcom/examples/soc_proto_mcu_report_schema.json")).absoluteFilePath(),
         QFileInfo(appDir + QStringLiteral("/../share/gnu_jcom/examples/linear_demo_schema.json")).absoluteFilePath(),
         QFileInfo(appDir + QStringLiteral("/../share/gnu_jcom/examples/sine_demo_schema.json")).absoluteFilePath(),

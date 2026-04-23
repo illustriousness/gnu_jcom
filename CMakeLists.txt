@@ -7,6 +7,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+option(GNU_JCOM_ENABLE_QT_DEPLOYMENT "Bundle Qt runtime dependencies during install." OFF)
+
 include(GNUInstallDirs)
 include(CTest)
 
@@ -65,6 +67,7 @@ install(TARGETS gnu_jcom
 
 install(FILES
     examples/linear_demo_schema.json
+    examples/soc_proto_mcu_report_schema.json
     examples/sine_demo_schema.json
     DESTINATION ${CMAKE_INSTALL_DATADIR}/gnu_jcom/examples
 )
@@ -88,6 +91,22 @@ target_link_libraries(gnu_jcom_demo_device PRIVATE
 install(TARGETS gnu_jcom_demo_device
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
+
+if(GNU_JCOM_ENABLE_QT_DEPLOYMENT)
+    qt_generate_deploy_qml_app_script(
+        TARGET gnu_jcom
+        OUTPUT_SCRIPT gnu_jcom_deploy_script
+        NO_UNSUPPORTED_PLATFORM_ERROR
+    )
+    install(SCRIPT ${gnu_jcom_deploy_script})
+
+    qt_generate_deploy_app_script(
+        TARGET gnu_jcom_demo_device
+        OUTPUT_SCRIPT gnu_jcom_demo_device_deploy_script
+        NO_UNSUPPORTED_PLATFORM_ERROR
+    )
+    install(SCRIPT ${gnu_jcom_demo_device_deploy_script})
+endif()
 
 if(BUILD_TESTING)
     qt_add_executable(gnu_jcom_payloadcodec_test
