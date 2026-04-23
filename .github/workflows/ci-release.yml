@@ -63,28 +63,33 @@ jobs:
       - name: Install
         shell: bash
         run: |
-          package_dir="$PWD/dist/${{ matrix.artifact_name }}"
+          package_dir="dist/${{ matrix.artifact_name }}"
           cmake --install build --config Release --prefix "$package_dir"
 
-      - name: Archive package
-        id: archive
+      - name: Archive package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist-archives | Out-Null
+          $archive = "dist-archives/${{ matrix.artifact_name }}.zip"
+          if (Test-Path $archive) {
+            Remove-Item $archive -Force
+          }
+          Compress-Archive -Path "dist/${{ matrix.artifact_name }}" -DestinationPath $archive
+
+      - name: Archive package (Unix)
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           mkdir -p dist-archives
-          if [[ "$RUNNER_OS" == "Windows" ]]; then
-            archive="$PWD/dist-archives/${{ matrix.artifact_name }}.zip"
-            tar -a -cf "$archive" -C "$PWD/dist" "${{ matrix.artifact_name }}"
-          else
-            archive="$PWD/dist-archives/${{ matrix.artifact_name }}.tar.gz"
-            tar -czf "$archive" -C "$PWD/dist" "${{ matrix.artifact_name }}"
-          fi
-          echo "path=$archive" >> "$GITHUB_OUTPUT"
+          archive="dist-archives/${{ matrix.artifact_name }}.tar.gz"
+          tar -czf "$archive" -C dist "${{ matrix.artifact_name }}"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: ${{ steps.archive.outputs.path }}
+          path: dist-archives/*
           if-no-files-found: error
           retention-days: 14
 
