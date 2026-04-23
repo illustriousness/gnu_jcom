@@ -60,10 +60,18 @@ jobs:
         shell: bash
         run: ctest --test-dir build --build-config Release --output-on-failure
 
-      - name: Install
+      - name: Install (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $packageDir = Join-Path $env:GITHUB_WORKSPACE "dist/${{ matrix.artifact_name }}"
+          cmake --install build --config Release --prefix "$packageDir"
+
+      - name: Install (Unix)
+        if: runner.os != 'Windows'
         shell: bash
         run: |
-          package_dir="dist/${{ matrix.artifact_name }}"
+          package_dir="$PWD/dist/${{ matrix.artifact_name }}"
           cmake --install build --config Release --prefix "$package_dir"
 
       - name: Archive package (Windows)
