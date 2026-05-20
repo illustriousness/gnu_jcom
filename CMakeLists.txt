@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(gnu_jcom VERSION 0.1.0 LANGUAGES CXX)
+project(gnu_jcom VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -11,6 +11,22 @@ option(GNU_JCOM_ENABLE_QT_DEPLOYMENT "Bundle Qt runtime dependencies during inst
 
 include(GNUInstallDirs)
 include(CTest)
+
+add_library(gnu_jcom_soc_proto_c STATIC
+    protocol_c/src/gnu_soc_proto.c
+)
+
+target_compile_features(gnu_jcom_soc_proto_c PUBLIC c_std_11)
+
+target_include_directories(gnu_jcom_soc_proto_c
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/protocol_c/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/gnu_jcom/protocol_c>
+)
+
+set_target_properties(gnu_jcom_soc_proto_c PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
+)
 
 if(WIN32 AND MSVC)
     set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION ${CMAKE_INSTALL_BINDIR})
@@ -71,6 +87,16 @@ install(TARGETS gnu_jcom
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
+install(TARGETS gnu_jcom_soc_proto_c
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
+
+install(FILES
+    protocol_c/include/gnu_soc_proto.h
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/gnu_jcom/protocol_c
+)
+
 install(FILES
     examples/linear_demo_schema.json
     examples/soc_proto_mcu_report_schema.json
@@ -115,6 +141,16 @@ if(GNU_JCOM_ENABLE_QT_DEPLOYMENT)
 endif()
 
 if(BUILD_TESTING)
+    add_executable(gnu_jcom_soc_proto_c_test
+        tests/soc_proto_c_test.c
+    )
+
+    target_link_libraries(gnu_jcom_soc_proto_c_test PRIVATE
+        gnu_jcom_soc_proto_c
+    )
+
+    add_test(NAME soc_proto_c COMMAND gnu_jcom_soc_proto_c_test)
+
     qt_add_executable(gnu_jcom_payloadcodec_test
         tests/payloadcodec_test.cpp
         src/payloadcodec.cpp
