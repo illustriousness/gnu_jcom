@@ -35,11 +35,58 @@ Window {
     // ── 状态 ───────────────────────────────────────────────────────────────────
     property int  activeTab:       0
     property bool sidebarVisible:  true
-    property bool portConnected:   false
+    readonly property bool portConnected: serial.portOpen
     property bool cmdSectionOpen:  true
     property int  selectedCmdItem: -1
     property bool timerRunning:    false
     property int _prevKeyEvent: 0
+    readonly property var baudRates: [9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600]
+
+    function portIndex(name) {
+        for (var i = 0; i < serial.availablePorts.length; i++) {
+            if (serial.availablePorts[i] === name)
+                return i
+        }
+        return -1
+    }
+
+    function baudIndex(rate) {
+        for (var i = 0; i < root.baudRates.length; i++) {
+            if (root.baudRates[i] === rate)
+                return i
+        }
+        return 4
+    }
+
+    function parityText(parity) {
+        return parity === 1 ? "Even" :
+               parity === 2 ? "Odd" :
+               parity === 3 ? "Space" :
+               parity === 4 ? "Mark" : "None"
+    }
+
+    function parityCode(parity) {
+        return parity === 1 ? "E" :
+               parity === 2 ? "O" :
+               parity === 3 ? "S" :
+               parity === 4 ? "M" : "N"
+    }
+
+    function flowText(flowControl) {
+        return flowControl === 1 ? "RTS/CTS" :
+               flowControl === 2 ? "XON/XOFF" : "None"
+    }
+
+    function frameFormatText() {
+        return serial.dataBits + root.parityCode(serial.parity) + serial.stopBits
+    }
+
+    function parseIntegerField(text, fallbackValue) {
+        var match = String(text).match(/-?\d+/)
+        return match === null ? fallbackValue : parseInt(match[0])
+    }
+
+    Component.onCompleted: serial.refreshPorts()
 
     // keyEventFlags 上升沿检测 → 右下角通知（状态位不需要，只有事件位才检测跳变）
     Connections {
@@ -227,7 +274,7 @@ Window {
                         }
                     }
                     Text {
-                        text: root.portConnected ? "/dev/ttyUSB0  115200" : "未连接"
+                        text: root.portConnected ? (serial.selectedPort + "  " + serial.baudRate) : "未连接"
                         font.pixelSize: 11; font.bold: root.portConnected
                         color: root.portConnected ? vscGreen : vscTextSec
                         anchors.verticalCenter: parent.verticalCenter
@@ -237,7 +284,7 @@ Window {
 
                 MouseArea {
                     anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                    onClicked: root.portConnected = !root.portConnected   // demo toggle
+                    onClicked: root.activeTab = 3
                     onEntered: portChip.border.width = 2
                     onExited:  portChip.border.width = 1
                 }
@@ -282,18 +329,18 @@ Window {
                         // ── 定时下发（固定，不可折叠）────────────────────────
                         SideSection { label: "定时下发"; open: true; canCollapse: false; width: parent.width }
 
-                        Repeater {
-                            model: [
-                                { name: "cmd_heartbeat", v: 10, w: 5  },
-                                { name: "cmd_sync",      v: 20, w: 10 },
-                            ]
-                            delegate: TimerItem {
-                                required property var modelData
-                                label: modelData.name
-                                vMs:   modelData.v
-                                wMs:   modelData.w
-                                width: protoSideCol.width
-                            }
+                        TimerItem {
+                            label: "VW 控制"
+                            vValue: serial.controlV
+                            wValue: serial.controlW
+                            periodMs: serial.controlPeriodMs
+                            running: serial.timedVwRunning
+                            width: protoSideCol.width
+                            onVCommitted: function(value) { serial.controlV = value }
+                            onWCommitted: function(value) { serial.controlW = value }
+                            onPeriodCommitted: function(value) { serial.controlPeriodMs = value }
+                            onStartRequested: function() { serial.startTimedVwControl() }
+                            onStopRequested: function() { serial.stopTimedVwControl() }
                         }
 
                         SideDivider { width: parent.width }
@@ -317,9 +364,16 @@ Window {
                                     required property string modelData
                                     required property int    index
                                     label: modelData
+                                    sendEnabled: modelData === "set_time_sync"
                                     expanded: root.selectedCmdItem === index
                                     width: protoSideCol.width
-                                    onItemClicked: root.selectedCmdItem = (root.selectedCmdItem === index ? -1 : index)
+                                    onItemClicked: function() {
+                                        root.selectedCmdItem = (root.selectedCmdItem === index ? -1 : index)
+                                    }
+                                    onSendRequested: function() {
+                                        if (modelData === "set_time_sync")
+                                            serial.sendCurrentTimestamp()
+                                    }
                                 }
                             }
                         }
@@ -421,7 +475,7 @@ Window {
                                         Row {
                                             spacing: 6
                                             Text { text: "Temp"; font.pixelSize: 11; color: vscTextSec; anchors.verticalCenter: parent.verticalCenter }
-                                            Text { text: (report.batteryTemp / 10.0).toFixed(1); font.pixelSize: 18; font.bold: true; font.family: "monospace"; color: vscTextPri; anchors.verticalCenter: parent.verticalCenter }
+                                            Text { text: report.batteryTemp; font.pixelSize: 18; font.bold: true; font.family: "monospace"; color: vscTextPri; anchors.verticalCenter: parent.verticalCenter }
                                             Text { text: "°C"; font.pixelSize: 11; color: vscTextDim; anchors.verticalCenter: parent.verticalCenter }
                                         }
                                     }
@@ -436,7 +490,17 @@ Window {
                                         Row {
                                             spacing: 6
                                             Text { text: "总帧数"; font.pixelSize: 11; color: vscTextSec; anchors.verticalCenter: parent.verticalCenter }
-                                            Text { text: report.frameCount; font.pixelSize: 22; font.bold: true; font.family: "monospace"; color: vscTextPri; anchors.verticalCenter: parent.verticalCenter }
+                                            Text { text: serial.parsedFrames; font.pixelSize: 22; font.bold: true; font.family: "monospace"; color: vscTextPri; anchors.verticalCenter: parent.verticalCenter }
+                                        }
+                                        Rectangle { width: parent.width; height: 1; color: vscBorder; opacity: 0.4 }
+                                        Row {
+                                            spacing: 6
+                                            Text { text: "RX字节"; font.pixelSize: 11; color: vscTextSec; anchors.verticalCenter: parent.verticalCenter }
+                                            Text { text: serial.rxBytes; font.pixelSize: 14; font.bold: true; font.family: "monospace"; color: vscTextPri; anchors.verticalCenter: parent.verticalCenter }
+                                            Text { text: "TX帧"; font.pixelSize: 11; color: vscTextSec; anchors.verticalCenter: parent.verticalCenter }
+                                            Text { text: serial.txFrames; font.pixelSize: 14; font.bold: true; font.family: "monospace"; color: vscTextPri; anchors.verticalCenter: parent.verticalCenter }
+                                            Text { text: "坏帧"; font.pixelSize: 11; color: vscTextSec; anchors.verticalCenter: parent.verticalCenter }
+                                            Text { text: serial.badFrames; font.pixelSize: 14; font.bold: true; font.family: "monospace"; color: serial.badFrames > 0 ? vscRed : vscTextPri; anchors.verticalCenter: parent.verticalCenter }
                                         }
                                         Rectangle { width: parent.width; height: 1; color: vscBorder; opacity: 0.4 }
                                         Row {
@@ -448,23 +512,6 @@ Window {
                                                 color: report.moduleFaultFlags !== 0 ? vscRed : vscGreen
                                                 anchors.verticalCenter: parent.verticalCenter
                                                 Behavior on color { ColorAnimation { duration: 200 } }
-                                            }
-                                        }
-                                        Rectangle { width: parent.width; height: 1; color: vscBorder; opacity: 0.4 }
-                                        // 模拟按键事件通知
-                                        Rectangle {
-                                            height: 22; width: mockKeyLbl.width + 16; radius: 4
-                                            color: mockKeyMA.containsMouse ? Qt.rgba(0.35,0.65,1,0.25) : Qt.rgba(0.35,0.65,1,0.12)
-                                            border.color: vscAccent; border.width: 1
-                                            Behavior on color { ColorAnimation { duration: 80 } }
-                                            Text { id: mockKeyLbl; text: "⌨ 模拟按键事件"; anchors.centerIn: parent; font.pixelSize: 10; color: vscAccent }
-                                            MouseArea {
-                                                id: mockKeyMA; anchors.fill: parent; hoverEnabled: true
-                                                onClicked: {
-                                                    var keys = ["POWER_OFF","DOCK","ESTOP","START","UNLOCK","NETCFG"]
-                                                    var pick = keys[Math.floor(Math.random() * keys.length)]
-                                                    notifModel.append({ msg: "⌨  KEY: " + pick, kind: "key", createdAt: Date.now() })
-                                                }
                                             }
                                         }
                                     }
@@ -488,14 +535,6 @@ Window {
                                     width: parent.width; spacing: 40
                                     Column {
                                         spacing: 7
-                                        Text { text: "— 姿态 —"; font.pixelSize: 10; color: vscTextSec }
-                                        ImuField { lbl: "Yaw";   val: (report.imuYaw   / 100.0).toFixed(1); unt: "°"  }
-                                        ImuField { lbl: "Pitch"; val: (report.imuPitch / 100.0).toFixed(1); unt: "°"  }
-                                        ImuField { lbl: "Roll";  val: (report.imuRoll  / 100.0).toFixed(1); unt: "°"  }
-                                        ImuField { lbl: "Temp";  val: (report.imuTemp  / 10.0 ).toFixed(1); unt: "°C" }
-                                    }
-                                    Column {
-                                        spacing: 7
                                         Text { text: "— 加速度 —"; font.pixelSize: 10; color: vscTextSec }
                                         ImuField { lbl: "Accel X"; val: report.imuAccelX + ""; unt: "mg" }
                                         ImuField { lbl: "Accel Y"; val: report.imuAccelY + ""; unt: "mg" }
@@ -507,6 +546,14 @@ Window {
                                         ImuField { lbl: "Gyro X"; val: report.imuGyroX + ""; unt: "dps" }
                                         ImuField { lbl: "Gyro Y"; val: report.imuGyroY + ""; unt: "dps" }
                                         ImuField { lbl: "Gyro Z"; val: report.imuGyroZ + ""; unt: "dps" }
+                                    }
+                                    Column {
+                                        spacing: 7
+                                        Text { text: "— 姿态 —"; font.pixelSize: 10; color: vscTextSec }
+                                        ImuField { lbl: "Yaw";   val: report.imuYaw + ""; unt: "°"  }
+                                        ImuField { lbl: "Pitch"; val: report.imuPitch + ""; unt: "°"  }
+                                        ImuField { lbl: "Roll";  val: report.imuRoll + ""; unt: "°"  }
+                                        ImuField { lbl: "Temp";  val: (report.imuTemp  / 10.0 ).toFixed(1); unt: "°C" }
                                     }
                                 }
                             }
@@ -608,8 +655,8 @@ Window {
 
                 Column {
                     anchors.centerIn: parent
-                    width: 320
-                    spacing: 16
+                    width: 380
+                    spacing: 14
 
                     // 连接状态标题
                     Row {
@@ -627,22 +674,51 @@ Window {
                         }
                     }
 
-                    // 参数配置表单（未连接时显示）
+                    Text {
+                        width: parent.width
+                        horizontalAlignment: Text.AlignHCenter
+                        wrapMode: Text.WordWrap
+                        text: serial.statusMessage
+                        font.pixelSize: 12
+                        color: serial.lastError.length > 0 ? vscRed : vscTextSec
+                    }
+
                     Column {
                         width: parent.width; spacing: 10
                         visible: !root.portConnected
                         Row {
                             width: parent.width; spacing: 8
-                            PortSettingRow { label: "端  口"; value: "自动检测"; width: parent.width * 0.56 - 4 }
-                            PortSettingRow { label: "波特率"; value: "115200";   width: parent.width * 0.44 - 4 }
+                            Column {
+                                width: parent.width * 0.58 - 4; spacing: 4
+                                Text { text: "端  口"; font.pixelSize: 12; color: vscTextSec }
+                                ComboBox {
+                                    id: portCombo
+                                    width: parent.width; height: 32
+                                    model: serial.availablePorts
+                                    enabled: serial.availablePorts.length > 0
+                                    currentIndex: root.portIndex(serial.selectedPort)
+                                    displayText: serial.availablePorts.length > 0 ? currentText : "未检测到串口"
+                                    onActivated: serial.selectedPort = currentText
+                                }
+                            }
+                            Column {
+                                width: parent.width * 0.42 - 4; spacing: 4
+                                Text { text: "波特率"; font.pixelSize: 12; color: vscTextSec }
+                                ComboBox {
+                                    width: parent.width; height: 32
+                                    model: root.baudRates
+                                    currentIndex: root.baudIndex(serial.baudRate)
+                                    onActivated: serial.baudRate = parseInt(currentText)
+                                }
+                            }
                         }
                         Row {
                             width: parent.width; spacing: 8
-                            PortSettingRow { label: "数据位"; value: "8";    width: (parent.width - 16) / 3 }
-                            PortSettingRow { label: "停止位"; value: "1";    width: (parent.width - 16) / 3 }
-                            PortSettingRow { label: "校验位"; value: "None"; width: (parent.width - 16) / 3 }
+                            PortSettingRow { label: "数据位"; value: serial.dataBits; width: (parent.width - 16) / 3 }
+                            PortSettingRow { label: "停止位"; value: serial.stopBits; width: (parent.width - 16) / 3 }
+                            PortSettingRow { label: "校验位"; value: root.parityText(serial.parity); width: (parent.width - 16) / 3 }
                         }
-                        PortSettingRow { label: "流  控"; value: "None"; width: parent.width }
+                        PortSettingRow { label: "流  控"; value: root.flowText(serial.flowControl); width: parent.width }
                     }
 
                     // 连接 / 断开 按钮
@@ -662,7 +738,7 @@ Window {
                         }
                         MouseArea {
                             id: portActionMA; anchors.fill: parent; hoverEnabled: true
-                            onClicked: root.portConnected = !root.portConnected
+                            onClicked: root.portConnected ? serial.closePort() : serial.openPort()
                         }
                     }
 
@@ -672,10 +748,13 @@ Window {
                         visible: root.portConnected
                         Repeater {
                             model: [
-                                { k: "端口",   v: "/dev/ttyUSB0" },
-                                { k: "波特率", v: "115200"       },
-                                { k: "帧格式", v: "8N1"          },
-                                { k: "流控",   v: "None"         },
+                                { k: "端口",   v: serial.selectedPort },
+                                { k: "波特率", v: serial.baudRate },
+                                { k: "帧格式", v: root.frameFormatText() },
+                                { k: "流控",   v: root.flowText(serial.flowControl) },
+                                { k: "RX字节", v: serial.rxBytes },
+                                { k: "解析帧", v: serial.parsedFrames },
+                                { k: "坏帧",   v: serial.badFrames },
                             ]
                             delegate: Row {
                                 required property var modelData
@@ -784,12 +863,18 @@ Window {
     component TimerItem: Item {
         id: tiRoot
         property string label: ""
-        property int    vMs: 10
-        property int    wMs: 5
+        property int    vValue: 0
+        property int    wValue: 0
+        property int    periodMs: 100
         property bool   running: false
         property bool   expanded: false
+        signal vCommitted(int value)
+        signal wCommitted(int value)
+        signal periodCommitted(int value)
+        signal startRequested()
+        signal stopRequested()
 
-        height: tiRoot.expanded ? 88 : 32
+        height: tiRoot.expanded ? 136 : 32
         clip: true
         Behavior on height { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
 
@@ -815,6 +900,7 @@ Window {
                 // 启动/停止按钮
                 Rectangle {
                     width: 44; height: 18; radius: 3
+                    z: 2
                     anchors { right: parent.right; rightMargin: 8; verticalCenter: parent.verticalCenter }
                     color: tiRoot.running ? Qt.rgba(0.31, 0.79, 0.69, 0.18) : Qt.rgba(0, 0.47, 0.80, 0.18)
                     border.color: tiRoot.running ? vscGreen : vscAccent; border.width: 1
@@ -825,23 +911,50 @@ Window {
                     }
                     MouseArea {
                         anchors.fill: parent
-                        onClicked: { mouse.accepted = true; tiRoot.running = !tiRoot.running }
+                        onClicked: function(mouse) {
+                            mouse.accepted = true
+                            if (tiRoot.running)
+                                tiRoot.stopRequested()
+                            else
+                                tiRoot.startRequested()
+                        }
                     }
                 }
                 // 仅顶部行响应展开/折叠，不覆盖下方输入区
                 MouseArea {
-                    id: tiMA; anchors.fill: parent; hoverEnabled: true
+                    id: tiMA
+                    anchors { left: parent.left; right: parent.right; rightMargin: 58; top: parent.top; bottom: parent.bottom }
+                    hoverEnabled: true
                     onClicked: tiRoot.expanded = !tiRoot.expanded
                 }
             }
 
-            // 展开：速度参数（TextInput 在此区域，不被 MouseArea 覆盖）
-            Row {
+            // 展开：VW 控制参数（TextInput 在此区域，不被 MouseArea 覆盖）
+            Column {
                 anchors { left: parent.left; right: parent.right; top: parent.top; topMargin: 36 }
                 anchors.leftMargin: 18; anchors.rightMargin: 8
                 spacing: 6
-                MiniField { fieldLabel: "v 间隔"; fieldValue: tiRoot.vMs + " ms"; width: (parent.width - 6) / 2 }
-                MiniField { fieldLabel: "w 间隔"; fieldValue: tiRoot.wMs + " ms"; width: (parent.width - 6) / 2 }
+                Row {
+                    width: parent.width; spacing: 6
+                    MiniField {
+                        fieldLabel: "v"
+                        fieldValue: tiRoot.vValue + ""
+                        width: (parent.width - 6) / 2
+                        onCommitted: function(val) { tiRoot.vCommitted(root.parseIntegerField(val, tiRoot.vValue)) }
+                    }
+                    MiniField {
+                        fieldLabel: "w"
+                        fieldValue: tiRoot.wValue + ""
+                        width: (parent.width - 6) / 2
+                        onCommitted: function(val) { tiRoot.wCommitted(root.parseIntegerField(val, tiRoot.wValue)) }
+                    }
+                }
+                MiniField {
+                    fieldLabel: "周期"
+                    fieldValue: tiRoot.periodMs + " ms"
+                    width: parent.width
+                    onCommitted: function(val) { tiRoot.periodCommitted(root.parseIntegerField(val, tiRoot.periodMs)) }
+                }
             }
         }
     }
@@ -892,7 +1005,9 @@ Window {
         id: ciRoot
         property string label: ""
         property bool   expanded: false
+        property bool   sendEnabled: false
         signal itemClicked()
+        signal sendRequested()
 
         height: ciRoot.expanded ? 90 : 32
         clip: true
@@ -920,11 +1035,17 @@ Window {
                 }
                 // 发送按钮（hover 时显示）
                 Rectangle {
-                    visible: ciMA.containsMouse
+                    visible: ciRoot.sendEnabled && ciMA.containsMouse
                     width: 36; height: 18; radius: 3; color: vscAccent
                     anchors { right: parent.right; rightMargin: 8; verticalCenter: parent.verticalCenter }
                     Text { anchors.centerIn: parent; text: "发送"; font.pixelSize: 11; color: "white" }
-                    MouseArea { anchors.fill: parent; onClicked: { mouse.accepted = true; ciRoot.itemClicked() } }
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: function(mouse) {
+                            mouse.accepted = true
+                            ciRoot.sendRequested()
+                        }
+                    }
                 }
             }
 
@@ -942,7 +1063,7 @@ Window {
                         spacing: 6
                         Text { text: "自动"; font.pixelSize: 13; color: vscTextPri; anchors.verticalCenter: parent.verticalCenter }
                         Rectangle { width: 1; height: 12; color: vscBorder; anchors.verticalCenter: parent.verticalCenter }
-                        Text { text: "1748438400"; font.pixelSize: 12; color: vscTextSec; font.family: "monospace"; anchors.verticalCenter: parent.verticalCenter }
+                        Text { text: "点击时读取当前系统时间"; font.pixelSize: 12; color: vscTextSec; anchors.verticalCenter: parent.verticalCenter }
                     }
                 }
             }

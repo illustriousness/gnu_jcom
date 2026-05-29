@@ -9,16 +9,18 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include "McuReportModel.h"
+#include "SerialPortController.h"
 
 int main(int argc, char *argv[])
 {
     QGuiApplication app(argc, argv);
 
     McuReportModel reportModel;
-    reportModel.startMock(); // 无硬件时用模拟数据预览界面
+    SerialPortController serialController(&reportModel);
 
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("report", &reportModel);
+    engine.rootContext()->setContextProperty("serial", &serialController);
 
     // 开发时从源码目录加载 QML，改完文件重启即可，无需重新编译。
     // 发布时改回 qrc:/ 路径。

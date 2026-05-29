@@ -12,9 +12,9 @@ McuReportModel::McuReportModel(QObject *parent) : QObject(parent)
         m_data.w_real = static_cast<int16_t>(200.0 * std::cos(t * 0.3));
 
         // IMU：缓慢旋转 + 振动
-        m_data.imu.yaw         = static_cast<int16_t>(std::fmod(t * 50.0, 36000.0));
-        m_data.imu.pitch       = static_cast<int16_t>(150.0 * std::sin(t * 0.8));
-        m_data.imu.roll        = static_cast<int16_t>(100.0 * std::cos(t * 0.6));
+        m_data.imu.yaw         = static_cast<int16_t>(std::fmod(t * 5.0, 360.0));
+        m_data.imu.pitch       = static_cast<int16_t>(15.0 * std::sin(t * 0.8));
+        m_data.imu.roll        = static_cast<int16_t>(10.0 * std::cos(t * 0.6));
         m_data.imu.accel_x     = static_cast<int16_t>(50.0  * std::sin(t * 1.0));
         m_data.imu.accel_y     = static_cast<int16_t>(50.0  * std::cos(t * 1.2));
         m_data.imu.accel_z     = static_cast<int16_t>(1000.0 + 20.0 * std::sin(t * 2.0));
@@ -43,7 +43,7 @@ McuReportModel::McuReportModel(QObject *parent) : QObject(parent)
 
         // 电池
         m_data.battery.soc         = 75;
-        m_data.battery.temperature = static_cast<int16_t>(280.0 + 3.0 * std::sin(t * 0.05));
+        m_data.battery.temperature = static_cast<int16_t>(28.0 + 1.0 * std::sin(t * 0.05));
 
         // 系统标志：READY | RUNNING
         m_data.system.system_flags      = 0x0003;

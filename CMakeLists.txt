@@ -15,7 +15,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # add_executable(quectel_com src/main.cpp)
 
 # 先查找并加载 Qt6 组件；否则下面的 qt_standard_project_setup 等命令不存在。
-find_package(Qt6 6.5 REQUIRED COMPONENTS Quick Qml QuickControls2)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Quick Qml QuickControls2 SerialPort)
 
 # 使用 Qt 6.5 推荐的 QML 模块目录策略，避免 QTP0004 开发者 warning。
 qt_policy(SET QTP0004 NEW)
@@ -29,6 +29,8 @@ qt_add_executable(qcom
     src/main.cpp
     src/McuReportModel.h
     src/McuReportModel.cpp
+    src/SerialPortController.h
+    src/SerialPortController.cpp
     protocol_c/src/gnu_soc_proto.c
 )
 
@@ -49,6 +51,7 @@ target_link_libraries(qcom
         Qt6::Quick
         Qt6::Qml
         Qt6::QuickControls2
+        Qt6::SerialPort
 )
 
 # 头文件路径：让 src/ 能找到 protocol_c/include/
