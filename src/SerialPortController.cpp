@@ -3,7 +3,6 @@
 #include "McuReportModel.h"
 
 #include <QByteArray>
-#include <QDateTime>
 #include <QFileInfo>
 #include <QIODevice>
 
@@ -180,12 +179,14 @@ bool SerialPortController::openPort()
         }
 
         stopTimedVwControl();
+        setTerminalMode(false);
         m_serialPort.close();
         emit portOpenChanged();
     }
 
     configureSerialPort();
     gnu_soc_proto_parser_init(&m_parser);
+    setTerminalMode(false);
 
     if (!m_serialPort.open(QIODevice::ReadWrite)) {
         QString message = QStringLiteral("打开 %1 失败：%2").arg(m_selectedPort, m_serialPort.errorString());
@@ -207,16 +208,21 @@ bool SerialPortController::openPort()
 
 void SerialPortController::closePort()
 {
+    const bool wasTerminalMode = m_terminalMode;
+    stopTimedVwControl();
+    setTerminalMode(false);
+
     if (!m_serialPort.isOpen()) {
         setStatusMessage(QStringLiteral("串口未连接"));
         return;
     }
 
-    stopTimedVwControl();
     m_serialPort.close();
     gnu_soc_proto_parser_init(&m_parser);
     emit portOpenChanged();
-    setStatusMessage(QStringLiteral("已断开 %1").arg(m_selectedPort));
+    setStatusMessage(wasTerminalMode
+                         ? QStringLiteral("已退出终端模式并断开 %1").arg(m_selectedPort)
+                         : QStringLiteral("已断开 %1").arg(m_selectedPort));
 }
 
 void SerialPortController::clearStats()
@@ -243,29 +249,6 @@ bool SerialPortController::sendVwControl(int controlV, int controlW)
     m_controlW = controlW;
     emit controlConfigChanged();
     return sendCurrentVwControl();
-}
-
-bool SerialPortController::sendCurrentTimestamp()
-{
-    const qint64 currentSecs = QDateTime::currentSecsSinceEpoch();
-    if (currentSecs < 0 || static_cast<quint64>(currentSecs) > std::numeric_limits<uint32_t>::max()) {
-        setLastError(QStringLiteral("系统时间戳超出 uint32 范围，无法下发。"));
-        return false;
-    }
-
-    const gnu_soc_proto_time_cfg_t timeConfig{
-        static_cast<uint32_t>(currentSecs),
-    };
-
-    if (!writeProtocolFrame(static_cast<uint8_t>(GNU_SOC_PROTO_CMD_SET_TIME),
-                            reinterpret_cast<const uint8_t *>(&timeConfig),
-                            static_cast<uint8_t>(sizeof(timeConfig)),
-                            QStringLiteral("系统时间"))) {
-        return false;
-    }
-
-    setStatusMessage(QStringLiteral("已下发系统时间：%1").arg(timeConfig.timestamp));
-    return true;
 }
 
 bool SerialPortController::startTimedVwControl()
@@ -335,6 +318,13 @@ void SerialPortController::handleReadyRead()
     }
 
     m_rxBytes += static_cast<quint64>(bytes.size());
+
+    if (m_terminalMode) {
+        emit statsChanged();
+        appendTerminalBytes(bytes);
+        return;
+    }
+
     processBytes(bytes);
     emit statsChanged();
     setStatusMessage(QStringLiteral("接收 %1 字节，已解析 %2 帧")
@@ -353,6 +343,7 @@ void SerialPortController::handlePortError(QSerialPort::SerialPortError error)
     case QSerialPort::DeviceNotFoundError:
     case QSerialPort::ReadError:
         stopTimedVwControl();
+        setTerminalMode(false);
         if (m_serialPort.isOpen()) {
             m_serialPort.close();
             emit portOpenChanged();
@@ -549,6 +540,26 @@ bool SerialPortController::validateInt16(const QString &name, int value)
 {
     if (value < std::numeric_limits<int16_t>::min() || value > std::numeric_limits<int16_t>::max()) {
         setLastError(QStringLiteral("%1 必须在 int16 范围内（-32768 ~ 32767）。").arg(name));
+        return false;
+    }
+
+    return true;
+}
+
+bool SerialPortController::validateUint8(const QString &name, int value)
+{
+    if (value < 0 || value > std::numeric_limits<uint8_t>::max()) {
+        setLastError(QStringLiteral("%1 必须在 uint8 范围内（0 ~ 255）。").arg(name));
+        return false;
+    }
+
+    return true;
+}
+
+bool SerialPortController::validateUint16(const QString &name, int value)
+{
+    if (value < 0 || value > std::numeric_limits<uint16_t>::max()) {
+        setLastError(QStringLiteral("%1 必须在 uint16 范围内（0 ~ 65535）。").arg(name));
         return false;
     }
 

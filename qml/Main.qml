@@ -4,10 +4,10 @@ import QtQuick.Controls 2.15
 
 Window {
     id: root
-    width: 1000
-    height: 640
-    minimumWidth: 780
-    minimumHeight: 520
+    width: 1200
+    height: 760
+    minimumWidth: 900
+    minimumHeight: 560
     visible: true
     title: "GNU JCOM"
     color: vscBg
@@ -41,6 +41,12 @@ Window {
     property bool timerRunning:    false
     property int _prevKeyEvent: 0
     readonly property var baudRates: [9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600]
+    readonly property string terminalEntryPassword: "123456"
+
+    onActiveTabChanged: {
+        if (activeTab === 2)
+            sidebarVisible = false
+    }
 
     function portIndex(name) {
         for (var i = 0; i < serial.availablePorts.length; i++) {
@@ -86,6 +92,16 @@ Window {
         return match === null ? fallbackValue : parseInt(match[0])
     }
 
+    function requestTerminalMode() {
+        if (serial.terminalMode) {
+            root.activeTab = 2
+            root.sidebarVisible = false
+            return
+        }
+
+        terminalPasswordDialog.openForTerminal()
+    }
+
     Component.onCompleted: serial.refreshPorts()
 
     // keyEventFlags 上升沿检测 → 右下角通知（状态位不需要，只有事件位才检测跳变）
@@ -108,6 +124,22 @@ Window {
                 }
                 root._prevKeyEvent = ke
             }
+        }
+    }
+
+    TerminalPasswordDialog {
+        id: terminalPasswordDialog
+        serialController: serial
+        entryPassword: root.terminalEntryPassword
+        topOffset: topNav.height + 48
+        backgroundColor: vscSidebar
+        borderColor: vscOrange
+        textPrimary: vscTextPri
+        textSecondary: vscTextSec
+        errorColor: vscRed
+        onActivated: {
+            root.activeTab = 2
+            root.sidebarVisible = false
         }
     }
 
@@ -194,41 +226,24 @@ Window {
             height: 1; color: vscBorder
         }
 
-        // 左侧：品牌 + 折叠 + 标签
+        // 左侧：折叠 + 标签
         Row {
             anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
 
-            // 品牌标识
-            Rectangle {
-                width: 52; height: parent.height
-                color: "transparent"
-                Row {
-                    anchors.centerIn: parent; spacing: 4
-                    Rectangle {
-                        width: 6; height: 22; radius: 1
-                        gradient: Gradient {
-                            GradientStop { position: 0.0; color: vscAccent }
-                            GradientStop { position: 1.0; color: vscPurple }
-                        }
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
-                    Text {
-                        text: "JC"; font.pixelSize: 13; font.bold: true
-                        color: vscTextPri; anchors.verticalCenter: parent.verticalCenter
-                    }
-                }
-            }
-
             // 折叠按钮
             Rectangle {
-                width: 36; height: parent.height
+                width: 44; height: parent.height
                 color: sideToggleMA.containsMouse ? vscTabHover : "transparent"
                 Behavior on color { ColorAnimation { duration: 80 } }
                 Text {
-                    anchors.centerIn: parent; text: root.sidebarVisible ? "⇤" : "⇥"
-                    font.pixelSize: 15; color: sideToggleMA.containsMouse ? vscTextPri : vscTextSec
+                    anchors.centerIn: parent
+                    text: root.sidebarVisible ? "◀" : "☰"
+                    font.pixelSize: root.sidebarVisible ? 14 : 18
+                    color: sideToggleMA.containsMouse ? vscTextPri : vscTextSec
                     Behavior on color { ColorAnimation { duration: 80 } }
                 }
+                ToolTip.visible: sideToggleMA.containsMouse
+                ToolTip.text: root.sidebarVisible ? "收起左侧栏" : "展开左侧栏"
                 MouseArea {
                     id: sideToggleMA; anchors.fill: parent; hoverEnabled: true
                     onClicked: root.sidebarVisible = !root.sidebarVisible
@@ -239,7 +254,7 @@ Window {
 
             NavTab { icon: "◈"; label: "协议解析"; active: root.activeTab === 0; accent: vscAccent;  onTabClicked: root.activeTab = 0 }
             NavTab { icon: "⇅"; label: "文件传输"; active: root.activeTab === 1; accent: vscGreen;   onTabClicked: root.activeTab = 1 }
-            NavTab { icon: "❯"; label: "终端模式"; active: root.activeTab === 2; accent: vscOrange;  onTabClicked: root.activeTab = 2 }
+            NavTab { icon: "❯"; label: "终端模式"; active: root.activeTab === 2; accent: vscOrange;  onTabClicked: root.requestTerminalMode() }
             NavTab { icon: "⚙"; label: "串口设置"; active: root.activeTab === 3; accent: vscPurple;  onTabClicked: root.activeTab = 3 }
         }
 
@@ -358,23 +373,54 @@ Window {
                             visible: root.cmdSectionOpen
                             clip: true
 
-                            Repeater {
-                                model: ["set_time_sync", "set_config", "set_mode", "reset_device"]
-                                delegate: CmdItem {
-                                    required property string modelData
-                                    required property int    index
-                                    label: modelData
-                                    sendEnabled: modelData === "set_time_sync"
-                                    expanded: root.selectedCmdItem === index
-                                    width: protoSideCol.width
-                                    onItemClicked: function() {
-                                        root.selectedCmdItem = (root.selectedCmdItem === index ? -1 : index)
-                                    }
-                                    onSendRequested: function() {
-                                        if (modelData === "set_time_sync")
-                                            serial.sendCurrentTimestamp()
-                                    }
-                                }
+                            ProtocolCommandItem {
+                                label: "set_time_sync"
+                                commandType: "time"
+                                expanded: root.selectedCmdItem === 0
+                                expandedHeight: 92
+                                width: protoSideCol.width
+                                onItemClicked: root.selectedCmdItem = (root.selectedCmdItem === 0 ? -1 : 0)
+                                onSendRequested: function() { serial.sendCurrentTimestamp() }
+                            }
+
+                            ProtocolCommandItem {
+                                label: "ctrl_motor"
+                                commandType: "motor"
+                                expanded: root.selectedCmdItem === 1
+                                expandedHeight: 132
+                                width: protoSideCol.width
+                                onItemClicked: root.selectedCmdItem = (root.selectedCmdItem === 1 ? -1 : 1)
+                                onSendRequested: function() { serial.sendMotorConfig(motorId, motorPayload) }
+                            }
+
+                            ProtocolCommandItem {
+                                label: "ctrl_led"
+                                commandType: "led"
+                                expanded: root.selectedCmdItem === 2
+                                expandedHeight: 188
+                                width: protoSideCol.width
+                                onItemClicked: root.selectedCmdItem = (root.selectedCmdItem === 2 ? -1 : 2)
+                                onSendRequested: function() { serial.sendLedConfig(ledMode, ledId, ledR, ledG, ledB, ledInterval) }
+                            }
+
+                            ProtocolCommandItem {
+                                label: "ctrl_power"
+                                commandType: "power"
+                                expanded: root.selectedCmdItem === 3
+                                expandedHeight: 112
+                                width: protoSideCol.width
+                                onItemClicked: root.selectedCmdItem = (root.selectedCmdItem === 3 ? -1 : 3)
+                                onSendRequested: function() { serial.sendPowerControl(powerAction) }
+                            }
+
+                            ProtocolCommandItem {
+                                label: "ctrl_buzzer"
+                                commandType: "buzzer"
+                                expanded: root.selectedCmdItem === 4
+                                expandedHeight: 154
+                                width: protoSideCol.width
+                                onItemClicked: root.selectedCmdItem = (root.selectedCmdItem === 4 ? -1 : 4)
+                                onSendRequested: function() { serial.sendBuzzerControl(buzzerId, buzzerRepeat, buzzerOnMs, buzzerOffMs) }
                             }
                         }
                     }
@@ -632,20 +678,14 @@ Window {
 
 
             // ── 终端模式主界面 ─────────────────────────────────────────────────
-            Item {
+            TerminalPane {
                 anchors.fill: parent
                 visible: root.activeTab === 2
-                Rectangle {
-                    anchors.fill: parent; color: "#0c0c0c"
-                    Text {
-                        anchors { left: parent.left; leftMargin: 12; top: parent.top; topMargin: 10 }
-                        text: "$ _"; font.pixelSize: 13; font.family: "monospace"; color: "#cccccc"
-                    }
-                    Text {
-                        anchors.centerIn: parent
-                        text: "终端模式  功能开发中"; font.pixelSize: 12; color: "#4e4e4e"
-                    }
-                }
+                serialController: serial
+                terminalBackground: "#0c0c0c"
+                terminalText: "#cccccc"
+                terminalDim: "#4e4e4e"
+                terminalBorder: vscBorder
             }
 
             // ── 串口设置主界面 ─────────────────────────────────────────────────
@@ -956,118 +996,6 @@ Window {
                     onCommitted: function(val) { tiRoot.periodCommitted(root.parseIntegerField(val, tiRoot.periodMs)) }
                 }
             }
-        }
-    }
-
-    component MiniField: Item {
-        id: mfRoot
-        property string fieldLabel: ""
-        property string fieldValue: ""
-        signal committed(string val)
-        height: 44
-
-        // 同步外部值到编辑框（仅在未聚焦时，避免打断输入）
-        onFieldValueChanged: { if (!mfTi.activeFocus) mfTi.text = fieldValue }
-        Component.onCompleted: mfTi.text = fieldValue
-
-        Column {
-            anchors.fill: parent; spacing: 2
-            Row {
-                spacing: 5
-                Text { text: mfRoot.fieldLabel; font.pixelSize: 11; color: vscTextSec; anchors.verticalCenter: parent.verticalCenter }
-                // 聚焦时显示提示
-                Text {
-                    visible: mfTi.activeFocus
-                    text: "↵ 回车确认"
-                    font.pixelSize: 9; color: vscAccent; opacity: 0.8
-                    anchors.verticalCenter: parent.verticalCenter
-                }
-            }
-            Rectangle {
-                width: parent.width; height: 24; radius: 3
-                color: mfTi.activeFocus ? Qt.rgba(0.35,0.65,1,0.08) : vscInput
-                border.color: mfTi.activeFocus ? vscAccent : vscBorder; border.width: 1
-                Behavior on border.color { ColorAnimation { duration: 100 } }
-                TextInput {
-                    id: mfTi
-                    anchors { left: parent.left; right: parent.right; leftMargin: 6; rightMargin: 6; verticalCenter: parent.verticalCenter }
-                    font.pixelSize: 13; color: vscTextPri
-                    selectByMouse: true; selectedTextColor: "white"; selectionColor: vscAccent
-                    Keys.onReturnPressed:  { mfRoot.committed(text); focus = false }
-                    Keys.onEnterPressed:   { mfRoot.committed(text); focus = false }
-                    Keys.onEscapePressed:  { text = mfRoot.fieldValue; focus = false }  // Esc 取消
-                }
-            }
-        }
-    }
-
-    component CmdItem: Item {
-        id: ciRoot
-        property string label: ""
-        property bool   expanded: false
-        property bool   sendEnabled: false
-        signal itemClicked()
-        signal sendRequested()
-
-        height: ciRoot.expanded ? 90 : 32
-        clip: true
-        Behavior on height { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-
-        Rectangle {
-            anchors.fill: parent
-            color: ciMA.containsMouse ? vscSelected : "transparent"
-
-            MouseArea { id: ciMA; anchors.fill: parent; hoverEnabled: true; z: -1; onClicked: ciRoot.itemClicked() }
-
-            // 列表行
-            Item {
-                anchors { left: parent.left; right: parent.right; top: parent.top }
-                height: 32
-                Row {
-                    anchors { left: parent.left; leftMargin: 14; verticalCenter: parent.verticalCenter }
-                    spacing: 5
-                    Text {
-                        text: ciRoot.expanded ? "▾" : "▸"
-                        font.pixelSize: 11; color: vscTextSec
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
-                    Text { text: ciRoot.label; font.pixelSize: 14; color: vscTextPri; anchors.verticalCenter: parent.verticalCenter }
-                }
-                // 发送按钮（hover 时显示）
-                Rectangle {
-                    visible: ciRoot.sendEnabled && ciMA.containsMouse
-                    width: 36; height: 18; radius: 3; color: vscAccent
-                    anchors { right: parent.right; rightMargin: 8; verticalCenter: parent.verticalCenter }
-                    Text { anchors.centerIn: parent; text: "发送"; font.pixelSize: 11; color: "white" }
-                    MouseArea {
-                        anchors.fill: parent
-                        onClicked: function(mouse) {
-                            mouse.accepted = true
-                            ciRoot.sendRequested()
-                        }
-                    }
-                }
-            }
-
-            // 展开：时间戳设置
-            Column {
-                anchors { left: parent.left; right: parent.right; top: parent.top; topMargin: 36 }
-                anchors.leftMargin: 18; anchors.rightMargin: 8
-                spacing: 4
-                Text { text: "时间戳"; font.pixelSize: 11; color: vscTextSec }
-                Rectangle {
-                    width: parent.width; height: 24; radius: 3
-                    color: vscInput; border.color: vscBorder; border.width: 1
-                    Row {
-                        anchors { left: parent.left; leftMargin: 6; verticalCenter: parent.verticalCenter }
-                        spacing: 6
-                        Text { text: "自动"; font.pixelSize: 13; color: vscTextPri; anchors.verticalCenter: parent.verticalCenter }
-                        Rectangle { width: 1; height: 12; color: vscBorder; anchors.verticalCenter: parent.verticalCenter }
-                        Text { text: "点击时读取当前系统时间"; font.pixelSize: 12; color: vscTextSec; anchors.verticalCenter: parent.verticalCenter }
-                    }
-                }
-            }
-
         }
     }
 

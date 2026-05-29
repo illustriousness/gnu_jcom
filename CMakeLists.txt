@@ -31,6 +31,8 @@ qt_add_executable(qcom
     src/McuReportModel.cpp
     src/SerialPortController.h
     src/SerialPortController.cpp
+    src/SerialPortControllerCommands.cpp
+    src/SerialPortControllerTerminal.cpp
     protocol_c/src/gnu_soc_proto.c
 )
 
@@ -40,6 +42,10 @@ qt_add_qml_module(qcom
     VERSION 1.0
     QML_FILES
         qml/Main.qml
+        qml/MiniField.qml
+        qml/ProtocolCommandItem.qml
+        qml/TerminalPane.qml
+        qml/TerminalPasswordDialog.qml
 )
 
 # 把源码根目录传入 C++，让 main.cpp 能定位 QML 文件。
