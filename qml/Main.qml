@@ -1,1662 +1,687 @@
-import QtQuick
-import QtQuick.Controls
-import QtQuick.Layouts
+import QtQuick 2.15
+import QtQuick.Window 2.15
+import QtQuick.Controls 2.15
 
-ApplicationWindow {
-    id: window
-    width: 1540
-    height: 920
-    minimumWidth: 1220
-    minimumHeight: 760
+Window {
+    id: root
+    width: 1000
+    height: 640
+    minimumWidth: 780
+    minimumHeight: 520
     visible: true
-    title: "gnu_jcom"
-    color: "#d7dade"
+    title: "GNU JCOM"
+    color: vscBg
 
-    readonly property color chromeBorder: "#aab1b9"
-    readonly property color chromeFill: "#eceef1"
-    readonly property color toolbarStart: "#5b7387"
-    readonly property color toolbarEnd: "#516a7f"
-    readonly property color panelFill: "#f3f4f6"
-    readonly property color panelBorder: "#bcc3ca"
-    readonly property color textStrong: "#20252b"
-    readonly property color textMuted: "#65717d"
-    readonly property color accent: "#118bd1"
-    readonly property color accentDark: "#0f78b4"
-    readonly property color good: "#34815e"
-    readonly property color warn: "#bc7724"
-    readonly property color bad: "#b34d45"
-    readonly property color terminalFill: "#f8f8f8"
-    readonly property color terminalGrid: "#eef1f4"
-    readonly property color terminalText: "#2e3740"
+    // ── 主题配色（深色高对比）─────────────────────────────────────────────────
+    readonly property color vscBg:        "#161b22"
+    readonly property color vscSidebar:   "#1c2128"
+    readonly property color vscTabBar:    "#0d1117"
+    readonly property color vscTabActive: "#161b22"
+    readonly property color vscTabHover:  "#21262d"
+    readonly property color vscInput:     "#21262d"
+    readonly property color vscBorder:    "#30363d"
+    readonly property color vscCardBorder: "#4a5568"
+    readonly property color vscHover:     "#1f2937"
+    readonly property color vscSelected:  "#2d333b"
+    readonly property color vscAccent:    "#58a6ff"
+    readonly property color vscGreen:     "#3fb950"
+    readonly property color vscRed:       "#f85149"
+    readonly property color vscOrange:    "#d29922"
+    readonly property color vscPurple:    "#bc8cff"
+    readonly property color vscTextPri:   "#f0f6fc"
+    readonly property color vscTextSec:   "#8b949e"
+    readonly property color vscTextDim:   "#484f58"
 
-    property var baudRates: [9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600]
-    property var dataBitsOptions: [5, 6, 7, 8]
-    property var stopBitsOptions: [1, 2]
-    property var parityOptions: ["None", "Even", "Odd", "Space", "Mark"]
-    property var flowOptions: ["None", "Hardware", "Software"]
-    property var lineEndingOptions: ["None", "LF", "CRLF", "CR"]
-    property var packetTypeOptions: ["uint", "int", "float"]
-    property var packetByteWidthOptions: [1, 2, 4, 8]
-    property var packetEndianOptions: ["little", "big"]
-    property var packetChecksumOptions: [
-        { text: "SUM-8", value: "sum8" },
-        { text: "CRC-8", value: "crc8" },
-        { text: "CRC-8/ITU", value: "crc8_itu" },
-        { text: "CRC-8/ROHC", value: "crc8_rohc" },
-        { text: "CRC-8/MAXIM", value: "crc8_maxim" },
-        { text: "CRC-16/IBM", value: "crc16_ibm" },
-        { text: "CRC-16/MAXIM", value: "crc16_maxim" },
-        { text: "CRC-16/USB", value: "crc16_usb" },
-        { text: "CRC-16/MODBUS", value: "crc16_modbus" },
-        { text: "CRC-16/CCITT", value: "crc16_ccitt" },
-        { text: "CRC-16/CCITT-FALSE", value: "crc16_ccitt_false" },
-        { text: "CRC-16/X25", value: "crc16_x25" },
-        { text: "CRC-16/XMODEM", value: "crc16_xmodem" },
-        { text: "CRC-16/DNP", value: "crc16_dnp" },
-        { text: "CRC-32", value: "crc32" },
-        { text: "CRC-32/MPEG-2", value: "crc32_mpeg2" },
-        { text: "无校验", value: "none" }
-    ]
-    property bool toolsExpanded: false
-    property bool packetPathEditorVisible: false
-    property string packetPreviewText: ""
+    // ── 状态 ───────────────────────────────────────────────────────────────────
+    property int  activeTab:       0
+    property bool sidebarVisible:  true
+    property bool portConnected:   false
+    property bool cmdSectionOpen:  true
+    property int  selectedCmdItem: -1
+    property bool timerRunning:    false
+    property int _prevKeyEvent: 0
 
-    function packetAllowedByteWidths(typeName) {
-        const normalized = typeName ? typeName.toLowerCase() : ""
-        if (normalized === "float") {
-            return [4, 8]
-        }
-        return packetByteWidthOptions
-    }
-
-    function packetChecksumOptionIndex(value) {
-        for (let i = 0; i < packetChecksumOptions.length; ++i) {
-            if (packetChecksumOptions[i].value === value) {
-                return i
-            }
-        }
-        return 0
-    }
-
-    function packetPreviewByteCount(text) {
-        const normalized = text ? text.trim() : ""
-        if (normalized.length === 0) {
-            return 0
-        }
-        return normalized.split(/\s+/).length
-    }
-
-    function appendPacketFieldPreset(baseName, byteWidth, defaultValue, typeName = "uint") {
-        if (!app) {
-            return
-        }
-
-        const nextIndex = app.packetFieldModel.count + 1
-        const fieldName = baseName + "_" + nextIndex
-        if (!app.packetFieldModel.appendField(fieldName)) {
-            return
-        }
-
-        const modelIndex = app.packetFieldModel.count - 1
-        app.packetFieldModel.setFieldType(modelIndex, typeName)
-        app.packetFieldModel.setFieldByteWidth(modelIndex, byteWidth)
-        app.packetFieldModel.setSendValue(modelIndex, String(defaultValue))
-
-        if (packetFieldView) {
-            packetFieldView.currentIndex = modelIndex
-            packetFieldView.positionViewAtEnd()
-        }
-    }
-
-    function syncCombo(combo, values, value) {
-        const idx = values.indexOf(value)
-        if (idx >= 0 && combo.currentIndex !== idx) {
-            combo.currentIndex = idx
-        }
-    }
-
-    function resetTemplateEditor() {
-        sendListView.currentIndex = -1
-        templateNameField.text = ""
-        templatePayloadField.text = ""
-        templateModeGroup.currentIndex = 0
-    }
-
-    function loadTemplateEditor(index) {
-        const item = app.sendItemAt(index)
-        if (!item || Object.keys(item).length === 0) {
-            return
-        }
-
-        templateNameField.text = item.name
-        templatePayloadField.text = item.payload
-        templateModeGroup.currentIndex = item.mode
-    }
-
-    function basename(path) {
-        if (!path || path.length === 0) {
-            return "-"
-        }
-
-        const normalized = path.replace(/\\/g, "/")
-        const parts = normalized.split("/")
-        return parts.length > 0 ? parts[parts.length - 1] : normalized
-    }
-
-    function setComposerMode(useHex) {
-        const nextMode = useHex ? 1 : 0
-        if (nextMode === app.composeMode) {
-            return
-        }
-
-        composerArea.text = app.convertPayloadForMode(composerArea.text, app.composeMode, nextMode)
-        app.composeMode = nextMode
-
-        if (periodicSendCheck.checked) {
-            if (!app.startPeriodicSend(composerArea.text, app.composeMode, periodicIntervalBox.value)) {
-                periodicSendCheck.checked = false
-            }
-        }
-    }
-
-    function refreshPacketPreview() {
-        if (!app) {
-            packetPreviewText = ""
-            return
-        }
-
-        packetPreviewText = app.buildPacketPreview()
-    }
-
-    menuBar: MenuBar {
-        Menu {
-            title: "终端模式"
-
-            Action {
-                text: "清空接收区"
-                onTriggered: app.clearLogs()
-            }
-
-            Action {
-                text: "保存日志"
-                onTriggered: app.saveLog(logPathField.text)
-            }
-        }
-
-        Menu {
-            title: "设置"
-
-            Action {
-                text: window.toolsExpanded ? "收起扩展" : "展开扩展"
-                onTriggered: window.toolsExpanded = !window.toolsExpanded
-            }
-
-            Action {
-                text: "恢复默认路径"
-                onTriggered: {
-                    workspaceField.text = app.defaultWorkspacePath
-                    app.workspacePath = workspaceField.text
-                    logPathField.text = app.defaultLogExportPath
-                    app.logExportPath = logPathField.text
-                    packetSchemaPathField.text = app.packetSchemaPath
-                }
-            }
-        }
-
-        Menu {
-            title: "帮助"
-
-            Action {
-                text: "关于"
-                onTriggered: aboutDialog.open()
-            }
-        }
-    }
-
-    Dialog {
-        id: aboutDialog
-        modal: true
-        anchors.centerIn: parent
-        title: "关于 gnu_jcom"
-        standardButtons: Dialog.Ok
-
-        contentItem: Label {
-            text: "阶段 1 保持终端模式优先。\n当前已经补到基础组包、自定义接收解析和虚拟串口联调。"
-            color: textStrong
-            wrapMode: Text.WordWrap
-            padding: 16
-        }
-    }
-
-    footer: Rectangle {
-        implicitHeight: 24
-        color: "#d1d5da"
-        border.color: chromeBorder
-
-        RowLayout {
-            anchors.fill: parent
-            anchors.leftMargin: 8
-            anchors.rightMargin: 8
-            spacing: 10
-
-            Rectangle {
-                width: 8
-                height: 8
-                radius: 4
-                color: app.lastError.length > 0 ? bad : (app.portOpen ? good : warn)
-            }
-
-            Label {
-                text: app.statusMessage
-                color: textStrong
-                font.pixelSize: 11
-                Layout.fillWidth: true
-                elide: Label.ElideRight
-            }
-
-            Label {
-                text: app.selectedPort.length > 0 ? app.selectedPort : "No port"
-                color: textMuted
-                font.pixelSize: 11
-            }
-
-            Label {
-                text: "Workspace " + basename(app.workspacePath)
-                color: textMuted
-                font.pixelSize: 11
-            }
-        }
-    }
-
-    ColumnLayout {
-        anchors.fill: parent
-        anchors.bottomMargin: footer.height
-        spacing: 0
-
-        Rectangle {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 66
-            gradient: Gradient {
-                GradientStop { position: 0.0; color: toolbarStart }
-                GradientStop { position: 1.0; color: toolbarEnd }
-            }
-            border.color: "#6d7c88"
-
-            RowLayout {
-                anchors.fill: parent
-                anchors.leftMargin: 14
-                anchors.rightMargin: 14
-                spacing: 10
-
-                Label {
-                    text: "COM口"
-                    color: "#ffffff"
-                    font.pixelSize: 14
-                    font.bold: true
-                }
-
-                ComboBox {
-                    id: portCombo
-                    Layout.preferredWidth: 150
-                    model: app.availablePorts
-                    enabled: model.length > 0
-                    onActivated: app.selectedPort = currentText
-                }
-
-                Label {
-                    text: "波特率"
-                    color: "#ffffff"
-                    font.pixelSize: 14
-                    font.bold: true
-                }
-
-                ComboBox {
-                    id: baudCombo
-                    Layout.preferredWidth: 112
-                    editable: true
-                    model: baudRates
-                    onAccepted: app.baudRate = Number(editText)
-                    onActivated: app.baudRate = Number(currentText)
-                }
-
-                Button {
-                    text: app.portOpen ? "关闭" : "打开"
-                    Layout.preferredWidth: 90
-                    highlighted: true
-                    onClicked: {
-                        if (app.portOpen) {
-                            app.closePort()
-                        } else {
-                            app.openPort()
-                        }
+    // keyEventFlags 上升沿检测 → 右下角通知（状态位不需要，只有事件位才检测跳变）
+    Connections {
+        target: report
+        function onUpdated() {
+            var keNames = ["POWER_OFF","DOCK","ESTOP","START","UNLOCK","NETCFG"]
+            var ke = report.keyEventFlags
+            var keDiff = ke ^ root._prevKeyEvent
+            if (keDiff !== 0) {
+                for (var j = 0; j < keNames.length; j++) {
+                    var kbit = 1 << j
+                    if ((keDiff & kbit) && (ke & kbit)) {   // 上升沿
+                        notifModel.append({
+                            msg:       "⌨  KEY: " + keNames[j],
+                            kind:      "key",
+                            createdAt: Date.now()
+                        })
                     }
                 }
-
-                Item {
-                    Layout.fillWidth: true
-                }
-
-                Label {
-                    text: app.lastError.length > 0 ? "错误" : (app.portOpen ? "已连接" : "空闲")
-                    color: app.lastError.length > 0 ? "#ffd7d3" : "#ffffff"
-                    font.pixelSize: 12
-                    font.bold: true
-                }
+                root._prevKeyEvent = ke
             }
         }
+    }
 
-        Rectangle {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 34
-            color: chromeFill
-            border.color: chromeBorder
+    ListModel { id: notifModel }
 
-            RowLayout {
-                anchors.fill: parent
-                anchors.leftMargin: 8
-                anchors.rightMargin: 8
-                spacing: 6
-
-                Button {
-                    text: "清空"
-                    onClicked: app.clearLogs()
-                }
-
-                Button {
-                    text: "保存数据"
-                    onClicked: app.saveLog(logPathField.text)
-                }
-
-                Button {
-                    text: "刷新串口"
-                    onClicked: app.refreshPorts()
-                }
-
-                Item {
-                    Layout.fillWidth: true
-                }
-
-                CheckBox {
-                    text: "HEX显示"
-                    checked: app.hexDisplay
-                    onToggled: app.hexDisplay = checked
-                }
-
-                CheckBox {
-                    text: "扩展"
-                    checked: window.toolsExpanded
-                    onToggled: window.toolsExpanded = checked
-                }
-            }
+    // 通知自动消退（4 秒）
+    Timer {
+        interval: 800; running: true; repeat: true
+        onTriggered: {
+            var now = Date.now()
+            for (var i = notifModel.count - 1; i >= 0; i--)
+                if (now - notifModel.get(i).createdAt > 4000)
+                    notifModel.remove(i)
         }
+    }
 
-        RowLayout {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            spacing: 8
-            Layout.margins: 8
+    // ── 右下角通知覆盖层 ────────────────────────────────────────────────────────
+    Column {
+        anchors { right: parent.right; bottom: parent.bottom; rightMargin: 14; bottomMargin: 14 }
+        spacing: 6
+        z: 200
 
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                color: "#dfe3e8"
-                border.color: chromeBorder
+        Repeater {
+            model: notifModel
+            delegate: Rectangle {
+                required property string msg
+                required property string kind
+                required property var    createdAt
+                required property int    index
 
-                ColumnLayout {
-                    anchors.fill: parent
-                    anchors.margins: 0
-                    spacing: 10
+                width: notifText.width + 42; height: 36; radius: 6
+                color: kind === "fault"  ? Qt.rgba(0.97, 0.32, 0.29, 0.18) :
+                       kind === "clear"  ? Qt.rgba(0.24, 0.85, 0.44, 0.15) :
+                                           Qt.rgba(0.35, 0.65, 1.00, 0.15)
+                border.color: kind === "fault"  ? vscRed   :
+                              kind === "clear"  ? vscGreen :
+                                                  vscAccent
+                border.width: 1
 
-                    Rectangle {
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        color: panelFill
-                        border.color: panelBorder
-
-                        RowLayout {
-                            anchors.fill: parent
-                            spacing: 0
-
-                            Rectangle {
-                                Layout.preferredWidth: 36
-                                Layout.fillHeight: true
-                                color: "#e5e8ec"
-                                border.color: panelBorder
-
-                                ColumnLayout {
-                                    anchors.fill: parent
-                                    anchors.margins: 4
-                                    spacing: 6
-
-                                    Repeater {
-                                        model: ["⇅", "◔", "≣", "?"]
-
-                                        Rectangle {
-                                            Layout.alignment: Qt.AlignHCenter
-                                            width: 20
-                                            height: 20
-                                            radius: 2
-                                            color: index === 0 ? "#73b67d"
-                                                   : index === 1 ? "#7fc1e5"
-                                                   : index === 2 ? "#7cb3d8"
-                                                   : "#ea9b73"
-                                            border.color: "#9fa8b2"
-
-                                            Label {
-                                                anchors.centerIn: parent
-                                                text: modelData
-                                                color: "#ffffff"
-                                                font.pixelSize: 11
-                                                font.bold: true
-                                            }
-                                        }
-                                    }
-
-                                    Item {
-                                        Layout.fillHeight: true
-                                    }
-
-                                    Label {
-                                        text: "接\n收\n区"
-                                        color: textMuted
-                                        font.pixelSize: 11
-                                        horizontalAlignment: Text.AlignHCenter
-                                        Layout.alignment: Qt.AlignHCenter | Qt.AlignBottom
-                                    }
-                                }
-                            }
-
-                            Rectangle {
-                                Layout.fillWidth: true
-                                Layout.fillHeight: true
-                                color: terminalFill
-                                border.color: panelBorder
-
-                                ListView {
-                                    id: logView
-                                    anchors.fill: parent
-                                    anchors.margins: 1
-                                    clip: true
-                                    spacing: 1
-                                    model: app.logModel
-
-                                    delegate: Rectangle {
-                                        required property int index
-                                        required property string timestamp
-                                        required property string kind
-                                        required property string message
-                                        required property string hex
-
-                                        width: logView.width
-                                        height: Math.max(24, lineText.implicitHeight + 8)
-                                        color: index % 2 === 0 ? "#fbfbfc" : terminalGrid
-
-                                        RowLayout {
-                                            anchors.fill: parent
-                                            anchors.leftMargin: 8
-                                            anchors.rightMargin: 8
-                                            spacing: 8
-
-                                            Label {
-                                                text: timestamp
-                                                color: "#7d8b99"
-                                                font.family: "Noto Sans Mono"
-                                                font.pixelSize: 10
-                                                Layout.preferredWidth: 74
-                                            }
-
-                                            Rectangle {
-                                                width: 36
-                                                height: 16
-                                                radius: 2
-                                                color: kind === "error" ? "#b34d45"
-                                                       : kind === "warn" ? "#bc7724"
-                                                       : kind === "tx" ? "#4583b3"
-                                                       : kind === "rx" ? "#5b9d78"
-                                                       : "#8693a1"
-
-                                                Label {
-                                                    anchors.centerIn: parent
-                                                    text: kind.toUpperCase()
-                                                    color: "#ffffff"
-                                                    font.pixelSize: 8
-                                                    font.bold: true
-                                                }
-                                            }
-
-                                            Label {
-                                                id: lineText
-                                                text: (kind === "rx" || kind === "tx") && app.hexDisplay && hex.length > 0 ? hex : message
-                                                color: terminalText
-                                                wrapMode: Text.WrapAnywhere
-                                                font.family: kind === "rx" || kind === "tx" ? "Noto Sans Mono" : "Noto Sans"
-                                                font.pixelSize: 12
-                                                Layout.fillWidth: true
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    Rectangle {
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 126
-                        color: panelFill
-                        border.color: panelBorder
-
-                        RowLayout {
-                            anchors.fill: parent
-                            spacing: 0
-
-                            Rectangle {
-                                Layout.preferredWidth: 36
-                                Layout.fillHeight: true
-                                color: "#e5e8ec"
-                                border.color: panelBorder
-
-                                Label {
-                                    anchors.centerIn: parent
-                                    text: "发\n送\n区"
-                                    color: textMuted
-                                    font.pixelSize: 11
-                                    horizontalAlignment: Text.AlignHCenter
-                                }
-                            }
-
-                            Rectangle {
-                                Layout.fillWidth: true
-                                Layout.fillHeight: true
-                                color: "#fbfbfc"
-                                border.color: panelBorder
-
-                                TextArea {
-                                    id: composerArea
-                                    anchors.fill: parent
-                                    anchors.margins: 1
-                                    placeholderText: app.composeMode === 0 ? "输入待发送内容" : "AA 55 9B 1E B8"
-                                    wrapMode: TextArea.Wrap
-                                    selectByMouse: true
-                                    font.family: app.composeMode === 0 ? "Noto Sans" : "Noto Sans Mono"
-                                    font.pixelSize: 12
-                                    onTextChanged: {
-                                        if (periodicSendCheck.checked) {
-                                            if (!app.startPeriodicSend(text, app.composeMode, periodicIntervalBox.value)) {
-                                                periodicSendCheck.checked = false
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            Rectangle {
-                                Layout.preferredWidth: 188
-                                Layout.fillHeight: true
-                                color: "#eef1f4"
-                                border.color: panelBorder
-
-                                ColumnLayout {
-                                    anchors.fill: parent
-                                    anchors.margins: 8
-                                    spacing: 6
-
-                                    Button {
-                                        text: "发送"
-                                        Layout.fillWidth: true
-                                        highlighted: true
-                                        onClicked: app.sendPayload(composerArea.text, app.composeMode)
-                                    }
-
-                                    Button {
-                                        text: "清空"
-                                        Layout.fillWidth: true
-                                        onClicked: composerArea.text = ""
-                                    }
-
-                                    RowLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 6
-
-                                        CheckBox {
-                                            id: periodicSendCheck
-                                            text: "周期发送"
-                                            onToggled: {
-                                                if (checked) {
-                                                    if (!app.startPeriodicSend(composerArea.text, app.composeMode, periodicIntervalBox.value)) {
-                                                        checked = false
-                                                    }
-                                                } else {
-                                                    app.stopPeriodicSend()
-                                                }
-                                            }
-                                        }
-
-                                        SpinBox {
-                                            id: periodicIntervalBox
-                                            Layout.fillWidth: true
-                                            from: 100
-                                            to: 600000
-                                            stepSize: 100
-                                            value: app.periodicIntervalMs
-                                            editable: true
-                                            onValueModified: {
-                                                app.periodicIntervalMs = value
-                                                if (periodicSendCheck.checked) {
-                                                    if (!app.startPeriodicSend(composerArea.text, app.composeMode, value)) {
-                                                        periodicSendCheck.checked = false
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    RowLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 6
-
-                                        CheckBox {
-                                            id: hexSendCheck
-                                            text: "HEX发送"
-                                            checked: app.composeMode === 1
-                                            onToggled: setComposerMode(checked)
-                                        }
-
-                                        Item {
-                                            Layout.fillWidth: true
-                                        }
-
-                                        CheckBox {
-                                            text: "自动重连"
-                                            checked: app.autoReconnect
-                                            onToggled: app.autoReconnect = checked
-                                        }
-                                    }
-
-                                    RowLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 6
-
-                                        Label {
-                                            text: "文本结尾"
-                                            color: textMuted
-                                            font.pixelSize: 11
-                                        }
-
-                                        ComboBox {
-                                            id: lineEndingCombo
-                                            Layout.fillWidth: true
-                                            model: lineEndingOptions
-                                            onActivated: {
-                                                app.lineEnding = currentIndex
-                                                if (periodicSendCheck.checked) {
-                                                    if (!app.startPeriodicSend(composerArea.text, app.composeMode, periodicIntervalBox.value)) {
-                                                        periodicSendCheck.checked = false
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    RowLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 6
-
-                                        Button {
-                                            text: app.periodicActive ? "停止定时" : "启动定时"
-                                            Layout.fillWidth: true
-                                            onClicked: {
-                                                if (app.periodicActive) {
-                                                    app.stopPeriodicSend()
-                                                    periodicSendCheck.checked = false
-                                                } else {
-                                                    const started = app.startPeriodicSend(composerArea.text, app.composeMode, periodicIntervalBox.value)
-                                                    periodicSendCheck.checked = started
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+                Rectangle {
+                    anchors { top: parent.top; bottom: parent.bottom; left: parent.left }
+                    width: 3; radius: 1
+                    color: kind === "fault"  ? vscRed   :
+                           kind === "clear"  ? vscGreen :
+                                               vscAccent
                 }
-            }
 
-            Rectangle {
-                visible: window.toolsExpanded
-                Layout.preferredWidth: sideTabs.currentIndex === 1 ? 680 : 360
-                Layout.minimumWidth: sideTabs.currentIndex === 1 ? 620 : 320
-                Layout.fillHeight: true
-                color: "#e4e8ec"
-                border.color: chromeBorder
-
-                ColumnLayout {
-                    anchors.fill: parent
-                    anchors.margins: 8
+                Row {
+                    anchors { left: parent.left; leftMargin: 12; verticalCenter: parent.verticalCenter }
                     spacing: 8
+                    Text {
+                        id: notifText
+                        text: msg
+                        font.pixelSize: 12; font.family: "monospace"; font.bold: true
+                        color: kind === "fault"  ? vscRed   :
+                               kind === "clear"  ? vscGreen :
+                                                   vscAccent
+                    }
+                }
 
-                    TabBar {
-                        id: sideTabs
-                        Layout.fillWidth: true
+                // 右侧关闭按钮
+                Text {
+                    anchors { right: parent.right; rightMargin: 8; verticalCenter: parent.verticalCenter }
+                    text: "✕"; font.pixelSize: 9; color: vscTextDim
+                    MouseArea { anchors.fill: parent; onClicked: notifModel.remove(index) }
+                }
 
-                        TabButton { text: "模板" }
-                        TabButton { text: "组包" }
-                        TabButton { text: "工程" }
-                        TabButton { text: "设置" }
+                opacity: 0
+                NumberAnimation on opacity { to: 1; duration: 200 }
+            }
+        }
+    }
+
+    // ── 顶部导航栏 ─────────────────────────────────────────────────────────────
+    Rectangle {
+        id: topNav
+        anchors { top: parent.top; left: parent.left; right: parent.right }
+        height: 44
+        color: vscTabBar
+
+        // 底部分隔线
+        Rectangle {
+            anchors { bottom: parent.bottom; left: parent.left; right: parent.right }
+            height: 1; color: vscBorder
+        }
+
+        // 左侧：品牌 + 折叠 + 标签
+        Row {
+            anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
+
+            // 品牌标识
+            Rectangle {
+                width: 52; height: parent.height
+                color: "transparent"
+                Row {
+                    anchors.centerIn: parent; spacing: 4
+                    Rectangle {
+                        width: 6; height: 22; radius: 1
+                        gradient: Gradient {
+                            GradientStop { position: 0.0; color: vscAccent }
+                            GradientStop { position: 1.0; color: vscPurple }
+                        }
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                    Text {
+                        text: "JC"; font.pixelSize: 13; font.bold: true
+                        color: vscTextPri; anchors.verticalCenter: parent.verticalCenter
+                    }
+                }
+            }
+
+            // 折叠按钮
+            Rectangle {
+                width: 36; height: parent.height
+                color: sideToggleMA.containsMouse ? vscTabHover : "transparent"
+                Behavior on color { ColorAnimation { duration: 80 } }
+                Text {
+                    anchors.centerIn: parent; text: root.sidebarVisible ? "⇤" : "⇥"
+                    font.pixelSize: 15; color: sideToggleMA.containsMouse ? vscTextPri : vscTextSec
+                    Behavior on color { ColorAnimation { duration: 80 } }
+                }
+                MouseArea {
+                    id: sideToggleMA; anchors.fill: parent; hoverEnabled: true
+                    onClicked: root.sidebarVisible = !root.sidebarVisible
+                }
+            }
+
+            Rectangle { width: 1; height: 24; color: vscBorder; anchors.verticalCenter: parent.verticalCenter }
+
+            NavTab { icon: "◈"; label: "协议解析"; active: root.activeTab === 0; accent: vscAccent;  onTabClicked: root.activeTab = 0 }
+            NavTab { icon: "⇅"; label: "文件传输"; active: root.activeTab === 1; accent: vscGreen;   onTabClicked: root.activeTab = 1 }
+            NavTab { icon: "❯"; label: "终端模式"; active: root.activeTab === 2; accent: vscOrange;  onTabClicked: root.activeTab = 2 }
+            NavTab { icon: "⚙"; label: "串口设置"; active: root.activeTab === 3; accent: vscPurple;  onTabClicked: root.activeTab = 3 }
+        }
+
+        // 右侧：端口状态 pill
+        Row {
+            anchors { right: parent.right; rightMargin: 12; verticalCenter: parent.verticalCenter }
+            spacing: 8
+
+            // 端口状态 pill
+            Rectangle {
+                id: portChip
+                height: 26; radius: 13; width: portChipRow.width + 20
+                color: root.portConnected ? Qt.rgba(0.24, 0.73, 0.31, 0.15) : Qt.rgba(1,1,1,0.05)
+                border.color: root.portConnected ? vscGreen : vscBorder; border.width: 1
+                anchors.verticalCenter: parent.verticalCenter
+                Behavior on color { ColorAnimation { duration: 200 } }
+
+                Row {
+                    id: portChipRow
+                    anchors.centerIn: parent; spacing: 6
+
+                    Rectangle {
+                        width: 7; height: 7; radius: 3.5
+                        anchors.verticalCenter: parent.verticalCenter
+                        color: root.portConnected ? vscGreen : vscTextDim
+                        Behavior on color { ColorAnimation { duration: 300 } }
+                        // 连接时的脉冲动画
+                        SequentialAnimation on opacity {
+                            running: root.portConnected; loops: Animation.Infinite
+                            NumberAnimation { to: 0.4; duration: 800 }
+                            NumberAnimation { to: 1.0; duration: 800 }
+                        }
+                    }
+                    Text {
+                        text: root.portConnected ? "/dev/ttyUSB0  115200" : "未连接"
+                        font.pixelSize: 11; font.bold: root.portConnected
+                        color: root.portConnected ? vscGreen : vscTextSec
+                        anchors.verticalCenter: parent.verticalCenter
+                        Behavior on color { ColorAnimation { duration: 200 } }
+                    }
+                }
+
+                MouseArea {
+                    anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                    onClicked: root.portConnected = !root.portConnected   // demo toggle
+                    onEntered: portChip.border.width = 2
+                    onExited:  portChip.border.width = 1
+                }
+            }
+        }
+    }
+
+    // ── Body ───────────────────────────────────────────────────────────────────
+    Item {
+        id: body
+        anchors { top: topNav.bottom; bottom: parent.bottom; left: parent.left; right: parent.right }
+
+        // ── 左侧栏（可折叠）───────────────────────────────────────────────────
+        Rectangle {
+            id: sidebar
+            anchors { top: parent.top; bottom: parent.bottom; left: parent.left }
+            width: root.sidebarVisible ? 220 : 0
+            clip: true
+            color: vscSidebar
+            Behavior on width { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+
+            Rectangle {
+                anchors { top: parent.top; bottom: parent.bottom; right: parent.right }
+                width: 1; color: vscBorder
+            }
+
+            // 协议解析 - 左侧栏内容
+            Item {
+                anchors.fill: parent
+                visible: root.activeTab === 0
+                clip: true
+
+                Flickable {
+                    anchors.fill: parent
+                    contentHeight: protoSideCol.height
+                    clip: true
+
+                    Column {
+                        id: protoSideCol
+                        width: 220
+
+                        // ── 定时下发（固定，不可折叠）────────────────────────
+                        SideSection { label: "定时下发"; open: true; canCollapse: false; width: parent.width }
+
+                        Repeater {
+                            model: [
+                                { name: "cmd_heartbeat", v: 10, w: 5  },
+                                { name: "cmd_sync",      v: 20, w: 10 },
+                            ]
+                            delegate: TimerItem {
+                                required property var modelData
+                                label: modelData.name
+                                vMs:   modelData.v
+                                wMs:   modelData.w
+                                width: protoSideCol.width
+                            }
+                        }
+
+                        SideDivider { width: parent.width }
+
+                        // ── 单次下发（可折叠）────────────────────────────────
+                        SideSection {
+                            label: "单次下发"
+                            open: root.cmdSectionOpen
+                            width: parent.width
+                            onToggled: root.cmdSectionOpen = !root.cmdSectionOpen
+                        }
+
+                        Column {
+                            width: parent.width
+                            visible: root.cmdSectionOpen
+                            clip: true
+
+                            Repeater {
+                                model: ["set_time_sync", "set_config", "set_mode", "reset_device"]
+                                delegate: CmdItem {
+                                    required property string modelData
+                                    required property int    index
+                                    label: modelData
+                                    expanded: root.selectedCmdItem === index
+                                    width: protoSideCol.width
+                                    onItemClicked: root.selectedCmdItem = (root.selectedCmdItem === index ? -1 : index)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 其他 tab 的左侧栏（暂空）
+            Item {
+                anchors.fill: parent
+                visible: root.activeTab !== 0
+            }
+        }
+
+        // ── 主界面（跟随左侧栏自动展开）───────────────────────────────────────
+        Item {
+            anchors { top: parent.top; bottom: parent.bottom; left: sidebar.right; right: parent.right }
+
+            // ── 协议解析主界面 ─────────────────────────────────────────────────
+            Item {
+                anchors.fill: parent
+                visible: root.activeTab === 0
+
+                // 接收数据区
+                Rectangle {
+                    anchors { top: parent.top; bottom: parent.bottom; left: parent.left; right: parent.right }
+                    color: vscBg
+
+                    // 结构化数据展示（gnu_soc_proto_mcu_report_t）
+                    Flickable {
+                        anchors.fill: parent
+                        contentWidth: width
+                        contentHeight: dashCol.implicitHeight + 20
+                        clip: true
+                        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+                        Column {
+                            id: dashCol
+                            width: parent.width - 24
+                            x: 12; y: 12
+                            spacing: 10
+
+                            // ── 第一行：运动 / 电池 / 统计 ───────────────────────
+                            Row {
+                                width: parent.width; spacing: 10
+
+                                DashCard {
+                                    cw: (parent.width - 20) / 3
+                                    accent: vscAccent
+                                    title: "运动"
+                                    Column {
+                                        width: parent.width; spacing: 10
+                                        Column {
+                                            width: parent.width; spacing: 4
+                                            Row {
+                                                width: parent.width
+                                                Text { text: "v_real"; font.pixelSize: 11; color: vscTextSec; width: parent.width - vIcon.width }
+                                                Text { id: vIcon; text: report.vReal >= 0 ? "↑" : "↓"; font.pixelSize: 13; color: report.vReal >= 0 ? vscGreen : "#e8a55a"; Behavior on color { ColorAnimation { duration: 100 } } }
+                                            }
+                                            Row {
+                                                spacing: 4
+                                                Text { text: report.vReal; font.pixelSize: 22; font.bold: true; font.family: "monospace"; color: vscTextPri }
+                                                Text { text: "mm/s"; font.pixelSize: 10; color: vscTextDim; anchors.bottom: parent.bottom; anchors.bottomMargin: 3 }
+                                            }
+                                        }
+                                        Rectangle { width: parent.width; height: 1; color: vscBorder; opacity: 0.4 }
+                                        Column {
+                                            width: parent.width; spacing: 4
+                                            Row {
+                                                width: parent.width
+                                                Text { text: "w_real"; font.pixelSize: 11; color: vscTextSec; width: parent.width - wIcon.width }
+                                                Text { id: wIcon; text: report.wReal >= 0 ? "↻" : "↺"; font.pixelSize: 13; color: report.wReal >= 0 ? vscGreen : "#e8a55a"; Behavior on color { ColorAnimation { duration: 100 } } }
+                                            }
+                                            Row {
+                                                spacing: 4
+                                                Text { text: report.wReal; font.pixelSize: 22; font.bold: true; font.family: "monospace"; color: vscTextPri }
+                                                Text { text: "mrad/s"; font.pixelSize: 10; color: vscTextDim; anchors.bottom: parent.bottom; anchors.bottomMargin: 3 }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                DashCard {
+                                    cw: (parent.width - 20) / 3
+                                    accent: vscGreen
+                                    title: "电池"
+                                    Column {
+                                        width: parent.width; spacing: 10
+                                        Column {
+                                            width: parent.width; spacing: 6
+                                            Row {
+                                                spacing: 5
+                                                Text { text: report.batterySoc; font.pixelSize: 36; font.bold: true; font.family: "monospace"; color: report.batterySoc > 50 ? vscGreen : report.batterySoc > 20 ? "#e8c55a" : vscRed; Behavior on color { ColorAnimation { duration: 300 } } }
+                                                Text { text: "%"; font.pixelSize: 16; color: vscTextDim; anchors.bottom: parent.bottom; anchors.bottomMargin: 5 }
+                                            }
+                                            MiniBar { width: parent.width; height: 10; radius: 5; ratio: report.batterySoc / 100.0; barColor: report.batterySoc > 50 ? vscGreen : report.batterySoc > 20 ? "#e8c55a" : vscRed }
+                                        }
+                                        Rectangle { width: parent.width; height: 1; color: vscBorder; opacity: 0.4 }
+                                        Row {
+                                            spacing: 6
+                                            Text { text: "Temp"; font.pixelSize: 11; color: vscTextSec; anchors.verticalCenter: parent.verticalCenter }
+                                            Text { text: (report.batteryTemp / 10.0).toFixed(1); font.pixelSize: 18; font.bold: true; font.family: "monospace"; color: vscTextPri; anchors.verticalCenter: parent.verticalCenter }
+                                            Text { text: "°C"; font.pixelSize: 11; color: vscTextDim; anchors.verticalCenter: parent.verticalCenter }
+                                        }
+                                    }
+                                }
+
+                                DashCard {
+                                    cw: (parent.width - 20) / 3
+                                    accent: "#9b59b6"
+                                    title: "统计"
+                                    Column {
+                                        width: parent.width; spacing: 6
+                                        Row {
+                                            spacing: 6
+                                            Text { text: "总帧数"; font.pixelSize: 11; color: vscTextSec; anchors.verticalCenter: parent.verticalCenter }
+                                            Text { text: report.frameCount; font.pixelSize: 22; font.bold: true; font.family: "monospace"; color: vscTextPri; anchors.verticalCenter: parent.verticalCenter }
+                                        }
+                                        Rectangle { width: parent.width; height: 1; color: vscBorder; opacity: 0.4 }
+                                        Row {
+                                            spacing: 6
+                                            Text { text: "模块故障"; font.pixelSize: 11; color: vscTextSec; anchors.verticalCenter: parent.verticalCenter }
+                                            Text {
+                                                text: report.moduleFaultFlags === 0 ? "正常" : "0x" + report.moduleFaultFlags.toString(16).toUpperCase()
+                                                font.pixelSize: 14; font.bold: true; font.family: "monospace"
+                                                color: report.moduleFaultFlags !== 0 ? vscRed : vscGreen
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                Behavior on color { ColorAnimation { duration: 200 } }
+                                            }
+                                        }
+                                        Rectangle { width: parent.width; height: 1; color: vscBorder; opacity: 0.4 }
+                                        // 模拟按键事件通知
+                                        Rectangle {
+                                            height: 22; width: mockKeyLbl.width + 16; radius: 4
+                                            color: mockKeyMA.containsMouse ? Qt.rgba(0.35,0.65,1,0.25) : Qt.rgba(0.35,0.65,1,0.12)
+                                            border.color: vscAccent; border.width: 1
+                                            Behavior on color { ColorAnimation { duration: 80 } }
+                                            Text { id: mockKeyLbl; text: "⌨ 模拟按键事件"; anchors.centerIn: parent; font.pixelSize: 10; color: vscAccent }
+                                            MouseArea {
+                                                id: mockKeyMA; anchors.fill: parent; hoverEnabled: true
+                                                onClicked: {
+                                                    var keys = ["POWER_OFF","DOCK","ESTOP","START","UNLOCK","NETCFG"]
+                                                    var pick = keys[Math.floor(Math.random() * keys.length)]
+                                                    notifModel.append({ msg: "⌨  KEY: " + pick, kind: "key", createdAt: Date.now() })
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // ── 第二行：三电机 ───────────────────────────────────
+                            Row {
+                                width: parent.width; spacing: 10
+                                MotorCard { title: "左电机  LEFT";  cw: (parent.width - 20) / 3; accent: "#9b59b6"; spd: report.leftSpeed;  cur: report.leftCurrent;  enc: report.leftEncoder;  flt: report.leftFault;  maxSpd: 500;  maxCur: 1000 }
+                                MotorCard { title: "右电机  RIGHT"; cw: (parent.width - 20) / 3; accent: "#9b59b6"; spd: report.rightSpeed; cur: report.rightCurrent; enc: report.rightEncoder; flt: report.rightFault; maxSpd: 500;  maxCur: 1000 }
+                                MotorCard { title: "切割电机  CUT"; cw: (parent.width - 20) / 3; accent: "#e67e22"; spd: report.cutSpeed;   cur: report.cutCurrent;   enc: report.cutEncoder;   flt: report.cutFault;   maxSpd: 1500; maxCur: 1500 }
+                            }
+
+                            // ── 第三行：IMU ──────────────────────────────────────
+                            DashCard {
+                                cw: parent.width
+                                accent: "#e67e22"
+                                title: "IMU"
+                                Row {
+                                    width: parent.width; spacing: 40
+                                    Column {
+                                        spacing: 7
+                                        Text { text: "— 姿态 —"; font.pixelSize: 10; color: vscTextSec }
+                                        ImuField { lbl: "Yaw";   val: (report.imuYaw   / 100.0).toFixed(1); unt: "°"  }
+                                        ImuField { lbl: "Pitch"; val: (report.imuPitch / 100.0).toFixed(1); unt: "°"  }
+                                        ImuField { lbl: "Roll";  val: (report.imuRoll  / 100.0).toFixed(1); unt: "°"  }
+                                        ImuField { lbl: "Temp";  val: (report.imuTemp  / 10.0 ).toFixed(1); unt: "°C" }
+                                    }
+                                    Column {
+                                        spacing: 7
+                                        Text { text: "— 加速度 —"; font.pixelSize: 10; color: vscTextSec }
+                                        ImuField { lbl: "Accel X"; val: report.imuAccelX + ""; unt: "mg" }
+                                        ImuField { lbl: "Accel Y"; val: report.imuAccelY + ""; unt: "mg" }
+                                        ImuField { lbl: "Accel Z"; val: report.imuAccelZ + ""; unt: "mg" }
+                                    }
+                                    Column {
+                                        spacing: 7
+                                        Text { text: "— 陀螺仪 —"; font.pixelSize: 10; color: vscTextSec }
+                                        ImuField { lbl: "Gyro X"; val: report.imuGyroX + ""; unt: "dps" }
+                                        ImuField { lbl: "Gyro Y"; val: report.imuGyroY + ""; unt: "dps" }
+                                        ImuField { lbl: "Gyro Z"; val: report.imuGyroZ + ""; unt: "dps" }
+                                    }
+                                }
+                            }
+
+                            // ── 第四行：系统标志 ─────────────────────────────────
+                            DashCard {
+                                cw: parent.width
+                                accent: vscTextDim
+                                title: "系统标志  SYSTEM FLAGS"
+                                Flow {
+                                    width: parent.width; spacing: 8
+                                    FlagBadge { lbl: "READY";              act: !!(report.systemFlags & 0x001) }
+                                    FlagBadge { lbl: "RUNNING";            act: !!(report.systemFlags & 0x002) }
+                                    FlagBadge { lbl: "CHARGING";           act: !!(report.systemFlags & 0x004) }
+                                    FlagBadge { lbl: "SLEEPING";           act: !!(report.systemFlags & 0x008) }
+                                    FlagBadge { lbl: "FAULT_EXIST";        act: !!(report.systemFlags & 0x010); err: !!(report.systemFlags & 0x010) }
+                                    FlagBadge { lbl: "MOTOR_FAULT_EXIST";  act: !!(report.systemFlags & 0x020); err: !!(report.systemFlags & 0x020) }
+                                    FlagBadge { lbl: "TIME_VALID";         act: !!(report.systemFlags & 0x040) }
+                                    FlagBadge { lbl: "REMOTE_CTL_TIMEOUT"; act: !!(report.systemFlags & 0x080); err: !!(report.systemFlags & 0x080) }
+                                    FlagBadge { lbl: "CUTTER_ENABLED";     act: !!(report.systemFlags & 0x100) }
+                                    FlagBadge { lbl: "LIFT_ENABLED";       act: !!(report.systemFlags & 0x200) }
+                                    FlagBadge { lbl: "FILE_TX_REQ";        act: !!(report.systemFlags & 0x400) }
+                                }
+                            }
+
+                            // ── 第五行：传感器标志 ───────────────────────────────
+                            DashCard {
+                                cw: parent.width
+                                accent: vscTextDim
+                                title: "传感器  SENSOR FLAGS"
+                                Flow {
+                                    width: parent.width; spacing: 8
+                                    FlagBadge { lbl: "BUMPER_LEFT";  act: !!(report.sensorFlags & 0x01); err: !!(report.sensorFlags & 0x01) }
+                                    FlagBadge { lbl: "ESTOP";        act: !!(report.sensorFlags & 0x02); err: !!(report.sensorFlags & 0x02) }
+                                    FlagBadge { lbl: "BUMPER_RIGHT"; act: !!(report.sensorFlags & 0x04); err: !!(report.sensorFlags & 0x04) }
+                                    FlagBadge { lbl: "LIFT_LEFT";    act: !!(report.sensorFlags & 0x08) }
+                                    FlagBadge { lbl: "LIFT_RIGHT";   act: !!(report.sensorFlags & 0x10) }
+                                    FlagBadge { lbl: "CUTTER_LIMIT"; act: !!(report.sensorFlags & 0x20) }
+                                    FlagBadge { lbl: "DOCK_CONTACT"; act: !!(report.sensorFlags & 0x40) }
+                                    FlagBadge { lbl: "RAIN";         act: !!(report.sensorFlags & 0x80) }
+                                }
+                            }
+
+                            // ── 第六行：模块故障 ─────────────────────────────────
+                            DashCard {
+                                cw: parent.width
+                                accent: vscRed
+                                title: "模块故障  MODULE FAULT FLAGS"
+                                Flow {
+                                    width: parent.width; spacing: 8
+                                    FlagBadge { lbl: "BATTERY_PACK"; act: !!(report.moduleFaultFlags & 0x01); err: !!(report.moduleFaultFlags & 0x01) }
+                                    FlagBadge { lbl: "MOTOR_LEFT";   act: !!(report.moduleFaultFlags & 0x02); err: !!(report.moduleFaultFlags & 0x02) }
+                                    FlagBadge { lbl: "MOTOR_RIGHT";  act: !!(report.moduleFaultFlags & 0x04); err: !!(report.moduleFaultFlags & 0x04) }
+                                    FlagBadge { lbl: "MOTOR_CUT";    act: !!(report.moduleFaultFlags & 0x08); err: !!(report.moduleFaultFlags & 0x08) }
+                                    FlagBadge { lbl: "MOTOR_LIFT";   act: !!(report.moduleFaultFlags & 0x10); err: !!(report.moduleFaultFlags & 0x10) }
+                                    FlagBadge { lbl: "ESTOP";        act: !!(report.moduleFaultFlags & 0x20); err: !!(report.moduleFaultFlags & 0x20) }
+                                }
+                            }
+                        }
+                    }
+                }
+
+            }
+
+            // ── 文件传输主界面 ─────────────────────────────────────────────────
+            Item {
+                anchors.fill: parent
+                visible: root.activeTab === 1
+                Column {
+                    anchors.centerIn: parent; spacing: 10
+                    Text { text: "⇅";      font.pixelSize: 36; color: vscTextDim; anchors.horizontalCenter: parent.horizontalCenter }
+                    Text { text: "文件传输"; font.pixelSize: 14; color: vscTextSec; anchors.horizontalCenter: parent.horizontalCenter }
+                    Text { text: "功能开发中"; font.pixelSize: 11; color: vscTextDim; anchors.horizontalCenter: parent.horizontalCenter }
+                }
+            }
+
+
+            // ── 终端模式主界面 ─────────────────────────────────────────────────
+            Item {
+                anchors.fill: parent
+                visible: root.activeTab === 2
+                Rectangle {
+                    anchors.fill: parent; color: "#0c0c0c"
+                    Text {
+                        anchors { left: parent.left; leftMargin: 12; top: parent.top; topMargin: 10 }
+                        text: "$ _"; font.pixelSize: 13; font.family: "monospace"; color: "#cccccc"
+                    }
+                    Text {
+                        anchors.centerIn: parent
+                        text: "终端模式  功能开发中"; font.pixelSize: 12; color: "#4e4e4e"
+                    }
+                }
+            }
+
+            // ── 串口设置主界面 ─────────────────────────────────────────────────
+            Item {
+                anchors.fill: parent
+                visible: root.activeTab === 3
+
+                Column {
+                    anchors.centerIn: parent
+                    width: 320
+                    spacing: 16
+
+                    // 连接状态标题
+                    Row {
+                        spacing: 10; anchors.horizontalCenter: parent.horizontalCenter
+                        Rectangle {
+                            width: 8; height: 8; radius: 4
+                            color: root.portConnected ? vscGreen : vscTextDim
+                            anchors.verticalCenter: parent.verticalCenter
+                            Behavior on color { ColorAnimation { duration: 300 } }
+                        }
+                        Text {
+                            text: root.portConnected ? "已连接" : "串口未连接"
+                            font.pixelSize: 16; color: vscTextPri
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
                     }
 
-                    StackLayout {
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        currentIndex: sideTabs.currentIndex
-
-                        Item {
-                            ColumnLayout {
-                                anchors.fill: parent
-                                spacing: 8
-
-                                TextField {
-                                    id: templateNameField
-                                    Layout.fillWidth: true
-                                    placeholderText: "模板名称"
-                                }
-
-                                QtObject {
-                                    id: templateModeGroup
-                                    property int currentIndex: 0
-                                }
-
-                                RowLayout {
-                                    spacing: 6
-
-                                    Label {
-                                        text: "模式"
-                                        color: textMuted
-                                        font.pixelSize: 11
-                                    }
-
-                                    ButtonGroup { id: templateModeButtons }
-
-                                    Repeater {
-                                        model: ["ASCII", "HEX"]
-
-                                        Button {
-                                            text: modelData
-                                            checkable: true
-                                            checked: templateModeGroup.currentIndex === index
-                                            ButtonGroup.group: templateModeButtons
-                                            onClicked: templateModeGroup.currentIndex = index
-                                        }
-                                    }
-                                }
-
-                                TextArea {
-                                    id: templatePayloadField
-                                    Layout.fillWidth: true
-                                    Layout.preferredHeight: 110
-                                    placeholderText: "模板内容"
-                                    wrapMode: TextArea.Wrap
-                                    selectByMouse: true
-                                }
-
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 6
-
-                                    Button {
-                                        text: "添加"
-                                        Layout.fillWidth: true
-                                        highlighted: true
-                                        onClicked: {
-                                            if (app.addSendItem(templateNameField.text, templatePayloadField.text, templateModeGroup.currentIndex)) {
-                                                resetTemplateEditor()
-                                            }
-                                        }
-                                    }
-
-                                    Button {
-                                        text: "更新"
-                                        Layout.fillWidth: true
-                                        enabled: sendListView.currentIndex >= 0
-                                        onClicked: app.updateSendItem(sendListView.currentIndex, templateNameField.text, templatePayloadField.text, templateModeGroup.currentIndex)
-                                    }
-
-                                    Button {
-                                        text: "删除"
-                                        Layout.fillWidth: true
-                                        enabled: sendListView.currentIndex >= 0
-                                        onClicked: {
-                                            app.removeSendItem(sendListView.currentIndex)
-                                            resetTemplateEditor()
-                                        }
-                                    }
-                                }
-
-                                Button {
-                                    text: "发送选中模板"
-                                    Layout.fillWidth: true
-                                    enabled: sendListView.currentIndex >= 0
-                                    highlighted: true
-                                    onClicked: app.sendSavedItem(sendListView.currentIndex)
-                                }
-
-                                Label {
-                                    text: "提示：双击下面的模板列表，也会直接发送。"
-                                    color: textMuted
-                                    font.pixelSize: 10
-                                    Layout.fillWidth: true
-                                    wrapMode: Text.WordWrap
-                                }
-
-                                Rectangle {
-                                    Layout.fillWidth: true
-                                    Layout.fillHeight: true
-                                    color: "#fafbfc"
-                                    border.color: panelBorder
-
-                                    ListView {
-                                        id: sendListView
-                                        anchors.fill: parent
-                                        anchors.margins: 1
-                                        clip: true
-                                        spacing: 1
-                                        model: app.sendListModel
-
-                                        delegate: Rectangle {
-                                            required property int index
-                                            required property string name
-                                            required property string payload
-                                            required property int mode
-
-                                            width: sendListView.width
-                                            height: 48
-                                            color: sendListView.currentIndex === index ? "#dceaf5" : (index % 2 === 0 ? "#fbfbfc" : "#f0f3f6")
-                                            border.color: sendListView.currentIndex === index ? accentDark : "#d0d6dd"
-
-                                            MouseArea {
-                                                anchors.fill: parent
-                                                onClicked: {
-                                                    sendListView.currentIndex = index
-                                                    loadTemplateEditor(index)
-                                                }
-                                                onDoubleClicked: app.sendSavedItem(index)
-                                            }
-
-                                            RowLayout {
-                                                anchors.fill: parent
-                                                anchors.leftMargin: 8
-                                                anchors.rightMargin: 8
-                                                spacing: 8
-
-                                                Label {
-                                                    text: mode === 0 ? "ASCII" : "HEX"
-                                                    color: textMuted
-                                                    font.pixelSize: 10
-                                                    Layout.preferredWidth: 42
-                                                }
-
-                                                ColumnLayout {
-                                                    Layout.fillWidth: true
-                                                    spacing: 0
-
-                                                    Label {
-                                                        text: name
-                                                        color: textStrong
-                                                        font.pixelSize: 12
-                                                        font.bold: true
-                                                        Layout.fillWidth: true
-                                                        elide: Label.ElideRight
-                                                    }
-
-                                                    Label {
-                                                        text: payload
-                                                        color: textMuted
-                                                        font.pixelSize: 11
-                                                        Layout.fillWidth: true
-                                                        elide: Label.ElideRight
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                    // 参数配置表单（未连接时显示）
+                    Column {
+                        width: parent.width; spacing: 10
+                        visible: !root.portConnected
+                        Row {
+                            width: parent.width; spacing: 8
+                            PortSettingRow { label: "端  口"; value: "自动检测"; width: parent.width * 0.56 - 4 }
+                            PortSettingRow { label: "波特率"; value: "115200";   width: parent.width * 0.44 - 4 }
                         }
-
-                        Item {
-                            ColumnLayout {
-                                anchors.fill: parent
-                                spacing: 8
-
-                                Rectangle {
-                                    Layout.fillWidth: true
-                                    Layout.preferredHeight: 32
-                                    color: "#d8e0e8"
-                                    border.color: panelBorder
-
-                                    RowLayout {
-                                        anchors.fill: parent
-                                        anchors.leftMargin: 8
-                                        anchors.rightMargin: 8
-                                        spacing: 8
-
-                                        Label {
-                                            text: "发送数据组包"
-                                            color: textStrong
-                                            font.pixelSize: 12
-                                            font.bold: true
-                                        }
-
-                                        Rectangle {
-                                            implicitWidth: packetSchemaLoadedLabel.implicitWidth + 14
-                                            implicitHeight: 18
-                                            radius: 2
-                                            color: app.packetSchemaLoaded ? "#dff1e7" : "#f4e8cc"
-                                            border.color: app.packetSchemaLoaded ? "#a7c9b5" : "#d8c38d"
-
-                                            Label {
-                                                id: packetSchemaLoadedLabel
-                                                anchors.centerIn: parent
-                                                text: app.packetSchemaLoaded ? "解析已应用" : "解析未应用"
-                                                color: app.packetSchemaLoaded ? good : warn
-                                                font.pixelSize: 10
-                                                font.bold: true
-                                            }
-                                        }
-
-                                        Item { Layout.fillWidth: true }
-
-                                        Label {
-                                            text: "字段 " + app.packetFieldModel.count + " 项"
-                                            color: textMuted
-                                            font.pixelSize: 11
-                                        }
-
-                                        Label {
-                                            text: "已解析 " + app.parsedFrameCount + " 帧"
-                                            color: textMuted
-                                            font.pixelSize: 11
-                                        }
-                                    }
-                                }
-
-                                Rectangle {
-                                    Layout.fillWidth: true
-                                    Layout.preferredHeight: 42
-                                    color: "#eef2f6"
-                                    border.color: panelBorder
-
-                                    RowLayout {
-                                        anchors.fill: parent
-                                        anchors.leftMargin: 8
-                                        anchors.rightMargin: 8
-                                        spacing: 6
-
-                                        Label {
-                                            text: "插入字段"
-                                            color: textMuted
-                                            font.pixelSize: 11
-                                        }
-
-                                        ToolButton {
-                                            text: "帧头"
-                                            onClicked: {
-                                                if (packetHeaderField.text.length === 0) {
-                                                    packetHeaderField.text = "AA 55"
-                                                    app.packetHeaderText = packetHeaderField.text
-                                                }
-                                                packetHeaderField.forceActiveFocus()
-                                                packetHeaderField.selectAll()
-                                            }
-                                        }
-
-                                        ToolButton {
-                                            text: "帧尾"
-                                            onClicked: {
-                                                if (packetFooterField.text.length === 0) {
-                                                    packetFooterField.text = "0D 0A"
-                                                    app.packetFooterText = packetFooterField.text
-                                                }
-                                                packetFooterField.forceActiveFocus()
-                                                packetFooterField.selectAll()
-                                            }
-                                        }
-
-                                        ToolButton {
-                                            text: "帧ID"
-                                            onClicked: appendPacketFieldPreset("frame_id", 2, 1, "uint")
-                                        }
-
-                                        ToolButton {
-                                            text: "1Byte"
-                                            onClicked: appendPacketFieldPreset("data1", 1, 0, "uint")
-                                        }
-
-                                        ToolButton {
-                                            text: "2Byte"
-                                            onClicked: appendPacketFieldPreset("data2", 2, 0, "uint")
-                                        }
-
-                                        ToolButton {
-                                            text: "4Byte"
-                                            onClicked: appendPacketFieldPreset("data4", 4, 0, "uint")
-                                        }
-
-                                        ToolButton {
-                                            text: "8Byte"
-                                            onClicked: appendPacketFieldPreset("data8", 8, 0, "uint")
-                                        }
-
-                                        Item { Layout.fillWidth: true }
-                                    }
-                                }
-
-                                Rectangle {
-                                    Layout.fillWidth: true
-                                    color: "#f6f8fa"
-                                    border.color: panelBorder
-                                    implicitHeight: packetMetaLayout.implicitHeight + 18
-
-                                    ColumnLayout {
-                                        id: packetMetaLayout
-                                        anchors.fill: parent
-                                        anchors.margins: 9
-                                        spacing: 8
-
-                                        RowLayout {
-                                            Layout.fillWidth: true
-                                            spacing: 6
-
-                                            Label {
-                                                text: "协议名"
-                                                color: textMuted
-                                                font.pixelSize: 11
-                                            }
-
-                                            TextField {
-                                                id: packetNameField
-                                                Layout.fillWidth: true
-                                                text: app.packetSchemaName
-                                                placeholderText: "packet_demo"
-                                                onTextEdited: app.packetSchemaName = text
-                                            }
-
-                                            Button {
-                                                text: "应用解析"
-                                                highlighted: true
-                                                onClicked: app.applyPacketDefinition()
-                                            }
-
-                                            Button {
-                                                text: "发送组包"
-                                                onClicked: app.sendPacket()
-                                            }
-                                        }
-
-                                        RowLayout {
-                                            Layout.fillWidth: true
-                                            spacing: 6
-
-                                            Label {
-                                                text: "当前JSON"
-                                                color: textMuted
-                                                font.pixelSize: 11
-                                            }
-
-                                            Label {
-                                                Layout.fillWidth: true
-                                                text: basename(app.packetSchemaPath)
-                                                color: textStrong
-                                                font.pixelSize: 11
-                                                font.bold: true
-                                                elide: Label.ElideMiddle
-                                                verticalAlignment: Text.AlignVCenter
-                                            }
-
-                                            Button {
-                                                text: packetPathEditorVisible ? "收起路径" : "路径设置"
-                                                onClicked: packetPathEditorVisible = !packetPathEditorVisible
-                                            }
-
-                                            Button {
-                                                text: "导入JSON"
-                                                onClicked: app.loadPacketSchema(packetSchemaPathField.text)
-                                            }
-
-                                            Button {
-                                                text: "导出JSON"
-                                                onClicked: app.savePacketSchema(packetSchemaPathField.text)
-                                            }
-                                        }
-
-                                        Label {
-                                            Layout.fillWidth: true
-                                            text: app.packetSchemaPath
-                                            color: textMuted
-                                            font.pixelSize: 10
-                                            elide: Label.ElideMiddle
-                                        }
-
-                                        RowLayout {
-                                            visible: packetPathEditorVisible
-                                            Layout.fillWidth: true
-                                            spacing: 6
-
-                                            Label {
-                                                text: "路径"
-                                                color: textMuted
-                                                font.pixelSize: 11
-                                            }
-
-                                            TextField {
-                                                id: packetSchemaPathField
-                                                Layout.fillWidth: true
-                                                text: app.packetSchemaPath
-                                                placeholderText: "examples/soc_proto_mcu_report_schema.json"
-                                                onEditingFinished: app.packetSchemaPath = text
-                                            }
-                                        }
-                                    }
-                                }
-
-                                Rectangle {
-                                    Layout.fillWidth: true
-                                    Layout.fillHeight: true
-                                    color: "#fafbfc"
-                                    border.color: panelBorder
-
-                                    ColumnLayout {
-                                        anchors.fill: parent
-                                        anchors.margins: 0
-                                        spacing: 0
-
-                                        Rectangle {
-                                            Layout.fillWidth: true
-                                            Layout.preferredHeight: 40
-                                            color: "#edf2f7"
-                                            border.color: panelBorder
-
-                                            RowLayout {
-                                                anchors.fill: parent
-                                                anchors.leftMargin: 8
-                                                anchors.rightMargin: 8
-                                                spacing: 8
-
-                                                Label {
-                                                    text: "帧头"
-                                                    color: textStrong
-                                                    font.pixelSize: 11
-                                                    font.bold: true
-                                                    Layout.preferredWidth: 38
-                                                }
-
-                                                TextField {
-                                                    id: packetHeaderField
-                                                    Layout.fillWidth: true
-                                                    text: app.packetHeaderText
-                                                    placeholderText: "AA 55"
-                                                    selectByMouse: true
-                                                    font.family: "Noto Sans Mono"
-                                                    inputMethodHints: Qt.ImhPreferUppercase | Qt.ImhNoPredictiveText
-                                                    onTextEdited: app.packetHeaderText = text
-                                                }
-
-                                                Label {
-                                                    text: "校验"
-                                                    color: textMuted
-                                                    font.pixelSize: 11
-                                                }
-
-                                                ComboBox {
-                                                    id: packetChecksumCombo
-                                                    Layout.preferredWidth: 188
-                                                    model: packetChecksumOptions
-                                                    textRole: "text"
-                                                    onActivated: app.packetChecksum = packetChecksumOptions[currentIndex].value
-                                                }
-                                            }
-                                        }
-
-                                        Rectangle {
-                                            Layout.fillWidth: true
-                                            Layout.preferredHeight: 30
-                                            color: "#e2e8ee"
-                                            border.color: panelBorder
-
-                                            RowLayout {
-                                                anchors.fill: parent
-                                                anchors.leftMargin: 8
-                                                anchors.rightMargin: 8
-                                                spacing: 6
-
-                                                Label { text: "#"; color: textMuted; font.pixelSize: 10; Layout.preferredWidth: 28 }
-                                                Label { text: "字段名称"; color: textMuted; font.pixelSize: 10; Layout.fillWidth: true }
-                                                Label { text: "类型"; color: textMuted; font.pixelSize: 10; Layout.preferredWidth: 72 }
-                                                Label { text: "字节"; color: textMuted; font.pixelSize: 10; Layout.preferredWidth: 52 }
-                                                Label { text: "发送值"; color: textMuted; font.pixelSize: 10; Layout.preferredWidth: 84 }
-                                                Label { text: "字节序"; color: textMuted; font.pixelSize: 10; Layout.preferredWidth: 72 }
-                                                Label { text: "接收值"; color: textMuted; font.pixelSize: 10; Layout.preferredWidth: 88 }
-                                                Label { text: "操作"; color: textMuted; font.pixelSize: 10; Layout.preferredWidth: 72 }
-                                            }
-                                        }
-
-                                        Rectangle {
-                                            Layout.fillWidth: true
-                                            Layout.fillHeight: true
-                                            color: "#fafbfc"
-                                            border.color: panelBorder
-
-                                            ListView {
-                                                id: packetFieldView
-                                                anchors.fill: parent
-                                                anchors.margins: 1
-                                                clip: true
-                                                spacing: 1
-                                                model: app.packetFieldModel
-                                                ScrollBar.vertical: ScrollBar {}
-
-                                                delegate: Rectangle {
-                                                    required property int index
-                                                    required property string name
-                                                    required property string typeName
-                                                    required property int byteWidth
-                                                    required property string endian
-                                                    required property string sendValue
-                                                    required property string receivedValue
-                                                    readonly property int rowIndex: index
-
-                                                    width: packetFieldView.width
-                                                    height: 44
-                                                    color: rowIndex % 2 === 0 ? "#fbfbfc" : "#f1f4f7"
-
-                                                    RowLayout {
-                                                        anchors.fill: parent
-                                                        anchors.leftMargin: 8
-                                                        anchors.rightMargin: 8
-                                                        spacing: 6
-
-                                                        Label {
-                                                            text: String(rowIndex + 1)
-                                                            color: textMuted
-                                                            font.pixelSize: 11
-                                                            Layout.preferredWidth: 28
-                                                        }
-
-                                                        TextField {
-                                                            Layout.fillWidth: true
-                                                            Layout.minimumWidth: 90
-                                                            text: name
-                                                            placeholderText: "字段名"
-                                                            onTextEdited: app.packetFieldModel.setFieldName(rowIndex, text)
-                                                        }
-
-                                                        ComboBox {
-                                                            Layout.preferredWidth: 72
-                                                            model: packetTypeOptions
-                                                            currentIndex: {
-                                                                const idx = packetTypeOptions.indexOf(typeName)
-                                                                return idx >= 0 ? idx : 0
-                                                            }
-                                                            onActivated: function() {
-                                                                app.packetFieldModel.setFieldType(rowIndex, currentText)
-                                                            }
-                                                        }
-
-                                                        ComboBox {
-                                                            Layout.preferredWidth: 52
-                                                            model: packetAllowedByteWidths(typeName)
-                                                            currentIndex: {
-                                                                const widths = packetAllowedByteWidths(typeName)
-                                                                const idx = widths.indexOf(byteWidth)
-                                                                return idx >= 0 ? idx : 0
-                                                            }
-                                                            onActivated: function() {
-                                                                const widths = packetAllowedByteWidths(typeName)
-                                                                app.packetFieldModel.setFieldByteWidth(rowIndex, widths[currentIndex])
-                                                            }
-                                                        }
-
-                                                        TextField {
-                                                            Layout.preferredWidth: 84
-                                                            text: sendValue
-                                                            selectByMouse: true
-                                                            horizontalAlignment: Text.AlignHCenter
-                                                            font.family: "Noto Sans Mono"
-                                                            onTextEdited: app.packetFieldModel.setSendValue(rowIndex, text)
-                                                        }
-
-                                                        ComboBox {
-                                                            Layout.preferredWidth: 72
-                                                            model: packetEndianOptions
-                                                            currentIndex: endian === "big" ? 1 : 0
-                                                            enabled: byteWidth > 1
-                                                            opacity: enabled ? 1.0 : 0.45
-                                                            onActivated: function() {
-                                                                app.packetFieldModel.setFieldEndian(rowIndex, currentText)
-                                                            }
-                                                        }
-
-                                                        Label {
-                                                            Layout.preferredWidth: 88
-                                                            text: receivedValue
-                                                            color: textStrong
-                                                            font.pixelSize: 11
-                                                            elide: Label.ElideRight
-                                                        }
-
-                                                        RowLayout {
-                                                            Layout.preferredWidth: 72
-                                                            spacing: 2
-
-                                                            ToolButton {
-                                                                text: "↑"
-                                                                onClicked: app.packetFieldModel.moveFieldUp(rowIndex)
-                                                            }
-
-                                                            ToolButton {
-                                                                text: "↓"
-                                                                onClicked: app.packetFieldModel.moveFieldDown(rowIndex)
-                                                            }
-
-                                                            ToolButton {
-                                                                text: "删"
-                                                                onClicked: app.packetFieldModel.removeField(rowIndex)
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        Rectangle {
-                                            Layout.fillWidth: true
-                                            Layout.preferredHeight: 40
-                                            color: "#edf2f7"
-                                            border.color: panelBorder
-
-                                            RowLayout {
-                                                anchors.fill: parent
-                                                anchors.leftMargin: 8
-                                                anchors.rightMargin: 8
-                                                spacing: 8
-
-                                                Label {
-                                                    text: "帧尾"
-                                                    color: textStrong
-                                                    font.pixelSize: 11
-                                                    font.bold: true
-                                                    Layout.preferredWidth: 38
-                                                }
-
-                                                TextField {
-                                                    id: packetFooterField
-                                                    Layout.fillWidth: true
-                                                    text: app.packetFooterText
-                                                    placeholderText: "可留空"
-                                                    selectByMouse: true
-                                                    font.family: "Noto Sans Mono"
-                                                    inputMethodHints: Qt.ImhPreferUppercase | Qt.ImhNoPredictiveText
-                                                    onTextEdited: app.packetFooterText = text
-                                                }
-
-                                                Label {
-                                                    text: "留空则不参与帧尾匹配"
-                                                    color: textMuted
-                                                    font.pixelSize: 11
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                Rectangle {
-                                    Layout.fillWidth: true
-                                    Layout.preferredHeight: 74
-                                    color: "#f7f9fb"
-                                    border.color: panelBorder
-
-                                    ColumnLayout {
-                                        anchors.fill: parent
-                                        anchors.margins: 10
-                                        spacing: 4
-
-                                        RowLayout {
-                                            Layout.fillWidth: true
-
-                                            Label {
-                                                text: "组包预览"
-                                                color: textStrong
-                                                font.pixelSize: 12
-                                                font.bold: true
-                                            }
-
-                                            Item { Layout.fillWidth: true }
-
-                                            Label {
-                                                text: packetPreviewText.length > 0
-                                                      ? "长度 " + packetPreviewByteCount(packetPreviewText) + " Byte"
-                                                      : "长度 -"
-                                                color: textMuted
-                                                font.pixelSize: 11
-                                            }
-                                        }
-
-                                        Text {
-                                            id: packetPreviewBody
-                                            Layout.fillWidth: true
-                                            text: packetPreviewText.length > 0 ? packetPreviewText : "当前定义无效，无法生成预览"
-                                            color: packetPreviewText.length > 0 ? terminalText : textMuted
-                                            wrapMode: Text.WrapAnywhere
-                                            font.family: "Noto Sans Mono"
-                                            font.pixelSize: 12
-                                            maximumLineCount: 2
-                                            elide: Text.ElideRight
-                                        }
-                                    }
-                                }
-
-                                Label {
-                                    text: "说明：帧头/帧尾填 HEX；帧ID 和数据字段都可在“类型”列切成 1/2/4/8 字节；改完点“应用解析”后，接收区按当前定义解析。"
-                                    color: textMuted
-                                    font.pixelSize: 11
-                                    wrapMode: Text.WordWrap
-                                    Layout.fillWidth: true
-                                }
-                            }
+                        Row {
+                            width: parent.width; spacing: 8
+                            PortSettingRow { label: "数据位"; value: "8";    width: (parent.width - 16) / 3 }
+                            PortSettingRow { label: "停止位"; value: "1";    width: (parent.width - 16) / 3 }
+                            PortSettingRow { label: "校验位"; value: "None"; width: (parent.width - 16) / 3 }
                         }
+                        PortSettingRow { label: "流  控"; value: "None"; width: parent.width }
+                    }
 
-                        Item {
-                            ColumnLayout {
-                                anchors.fill: parent
-                                spacing: 8
-
-                                Label {
-                                    text: "工作区路径"
-                                    color: textMuted
-                                    font.pixelSize: 11
-                                }
-
-                                TextField {
-                                    id: workspaceField
-                                    Layout.fillWidth: true
-                                    text: app.workspacePath
-                                    onEditingFinished: app.workspacePath = text
-                                }
-
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 6
-
-                                    Button {
-                                        text: "保存工作区"
-                                        Layout.fillWidth: true
-                                        onClicked: app.saveWorkspace(workspaceField.text)
-                                    }
-
-                                    Button {
-                                        text: "加载工作区"
-                                        Layout.fillWidth: true
-                                        onClicked: app.loadWorkspace(workspaceField.text)
-                                    }
-                                }
-
-                                Label {
-                                    text: "日志路径"
-                                    color: textMuted
-                                    font.pixelSize: 11
-                                }
-
-                                TextField {
-                                    id: logPathField
-                                    Layout.fillWidth: true
-                                    text: app.logExportPath
-                                    onEditingFinished: app.logExportPath = text
-                                }
-
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 6
-
-                                    Button {
-                                        text: "保存日志"
-                                        Layout.fillWidth: true
-                                        onClicked: app.saveLog(logPathField.text)
-                                    }
-
-                                    Button {
-                                        text: "默认路径"
-                                        Layout.fillWidth: true
-                                        onClicked: {
-                                            workspaceField.text = app.defaultWorkspacePath
-                                            app.workspacePath = workspaceField.text
-                                            logPathField.text = app.defaultLogExportPath
-                                            app.logExportPath = logPathField.text
-                                            packetSchemaPathField.text = app.packetSchemaPath
-                                        }
-                                    }
-                                }
-
-                                Rectangle {
-                                    Layout.fillWidth: true
-                                    height: 1
-                                    color: "#cfd5dc"
-                                }
-
-                                Label {
-                                    text: "提示：当前主界面按终端模式布局，模板、组包和工作区都收纳在扩展面板里。"
-                                    color: textMuted
-                                    font.pixelSize: 11
-                                    wrapMode: Text.WordWrap
-                                    Layout.fillWidth: true
-                                }
-
-                                Item {
-                                    Layout.fillHeight: true
-                                }
-                            }
+                    // 连接 / 断开 按钮
+                    Rectangle {
+                        width: parent.width; height: 36; radius: 4
+                        color: root.portConnected ? Qt.rgba(0.96, 0.53, 0.44, 0.14) : vscAccent
+                        border.color: root.portConnected ? vscRed : "transparent"
+                        border.width: 1
+                        opacity: portActionMA.containsMouse ? 0.80 : 1
+                        Behavior on color   { ColorAnimation { duration: 200 } }
+                        Behavior on opacity { NumberAnimation { duration: 100 } }
+                        Text {
+                            anchors.centerIn: parent
+                            text: root.portConnected ? "断  开" : "连  接"
+                            font.pixelSize: 13; font.bold: true
+                            color: root.portConnected ? vscRed : "white"
                         }
+                        MouseArea {
+                            id: portActionMA; anchors.fill: parent; hoverEnabled: true
+                            onClicked: root.portConnected = !root.portConnected
+                        }
+                    }
 
-                        Item {
-                            ColumnLayout {
-                                anchors.fill: parent
-                                spacing: 8
-
-                                GridLayout {
-                                    columns: 2
-                                    Layout.fillWidth: true
-                                    columnSpacing: 8
-                                    rowSpacing: 8
-
-                                    Label { text: "数据位"; color: textMuted; font.pixelSize: 11 }
-                                    ComboBox {
-                                        id: dataBitsCombo
-                                        Layout.fillWidth: true
-                                        model: dataBitsOptions
-                                        onActivated: app.dataBits = Number(currentText)
-                                    }
-
-                                    Label { text: "停止位"; color: textMuted; font.pixelSize: 11 }
-                                    ComboBox {
-                                        id: stopBitsCombo
-                                        Layout.fillWidth: true
-                                        model: stopBitsOptions
-                                        onActivated: app.stopBits = Number(currentText)
-                                    }
-
-                                    Label { text: "校验"; color: textMuted; font.pixelSize: 11 }
-                                    ComboBox {
-                                        id: parityCombo
-                                        Layout.fillWidth: true
-                                        model: parityOptions
-                                        onActivated: app.parity = currentIndex
-                                    }
-
-                                    Label { text: "流控"; color: textMuted; font.pixelSize: 11 }
-                                    ComboBox {
-                                        id: flowCombo
-                                        Layout.fillWidth: true
-                                        model: flowOptions
-                                        onActivated: app.flowControl = currentIndex
-                                    }
-                                }
-
-                                Rectangle {
-                                    Layout.fillWidth: true
-                                    height: 1
-                                    color: "#cfd5dc"
-                                }
-
-                                Label {
-                                    text: "会话状态"
-                                    color: textStrong
-                                    font.pixelSize: 12
-                                    font.bold: true
-                                }
-
-                                GridLayout {
-                                    columns: 2
-                                    Layout.fillWidth: true
-                                    columnSpacing: 8
-                                    rowSpacing: 6
-
-                                    Label { text: "端口"; color: textMuted; font.pixelSize: 11 }
-                                    Label { text: app.selectedPort.length > 0 ? app.selectedPort : "-"; color: textStrong; font.pixelSize: 11 }
-
-                                    Label { text: "波特率"; color: textMuted; font.pixelSize: 11 }
-                                    Label { text: String(app.baudRate); color: textStrong; font.pixelSize: 11 }
-
-                                    Label { text: "模式"; color: textMuted; font.pixelSize: 11 }
-                                    Label { text: app.composeMode === 0 ? "ASCII" : "HEX"; color: textStrong; font.pixelSize: 11 }
-
-                                    Label { text: "自动重连"; color: textMuted; font.pixelSize: 11 }
-                                    Label { text: app.autoReconnect ? "开启" : "关闭"; color: textStrong; font.pixelSize: 11 }
-
-                                    Label { text: "定时发送"; color: textMuted; font.pixelSize: 11 }
-                                    Label { text: app.periodicActive ? "运行中" : "已停止"; color: textStrong; font.pixelSize: 11 }
-                                }
-
-                                Rectangle {
-                                    visible: app.lastError.length > 0
-                                    Layout.fillWidth: true
-                                    color: "#f7e4e1"
-                                    border.color: "#ce9992"
-                                    implicitHeight: errorText.implicitHeight + 16
-
-                                    Label {
-                                        id: errorText
-                                        anchors.fill: parent
-                                        anchors.margins: 8
-                                        text: app.lastError
-                                        color: bad
-                                        wrapMode: Text.WordWrap
-                                        font.pixelSize: 11
-                                    }
-                                }
-
-                                Item {
-                                    Layout.fillHeight: true
-                                }
+                    // 已连接时显示详情
+                    Column {
+                        width: parent.width; spacing: 6
+                        visible: root.portConnected
+                        Repeater {
+                            model: [
+                                { k: "端口",   v: "/dev/ttyUSB0" },
+                                { k: "波特率", v: "115200"       },
+                                { k: "帧格式", v: "8N1"          },
+                                { k: "流控",   v: "None"         },
+                            ]
+                            delegate: Row {
+                                required property var modelData
+                                width: parent.width
+                                Text { text: modelData.k; width: 70; font.pixelSize: 12; color: vscTextSec }
+                                Text { text: modelData.v; font.pixelSize: 12; color: vscTextPri }
                             }
                         }
                     }
@@ -1665,137 +690,585 @@ ApplicationWindow {
         }
     }
 
-    Connections {
-        target: app
+    // ── 内联组件 ───────────────────────────────────────────────────────────────
 
-        function onAvailablePortsChanged() {
-            if (app.availablePorts.length > 0) {
-                const idx = app.availablePorts.indexOf(app.selectedPort)
-                portCombo.currentIndex = idx >= 0 ? idx : 0
-            } else {
-                portCombo.currentIndex = -1
+    component NavTab: Item {
+        id: ntRoot
+        property string label:  ""
+        property string icon:   ""
+        property bool   active: false
+        property color  accent: vscAccent
+        signal tabClicked()
+
+        height: parent ? parent.height : 0
+        width:  ntIcon.width + ntLbl.width + 26
+
+        Rectangle {
+            anchors.fill: parent
+            color: ntRoot.active ? Qt.rgba(1,1,1,0.04) : ntMA.containsMouse ? Qt.rgba(1,1,1,0.06) : "transparent"
+            Behavior on color { ColorAnimation { duration: 80 } }
+
+            // 激活底部彩色粗线
+            Rectangle {
+                visible: ntRoot.active
+                anchors { bottom: parent.bottom; left: parent.left; right: parent.right }
+                height: 3; radius: 1.5
+                color: ntRoot.accent
+            }
+
+            Row {
+                anchors.centerIn: parent; spacing: 5
+
+                Text {
+                    id: ntIcon; text: ntRoot.icon
+                    font.pixelSize: 14
+                    color: ntRoot.active ? ntRoot.accent : ntMA.containsMouse ? vscTextPri : vscTextSec
+                    anchors.verticalCenter: parent.verticalCenter
+                    Behavior on color { ColorAnimation { duration: 80 } }
+                }
+                Text {
+                    id: ntLbl; text: ntRoot.label
+                    font.pixelSize: 13
+                    font.bold: ntRoot.active
+                    color: ntRoot.active ? vscTextPri : ntMA.containsMouse ? Qt.rgba(0.94,0.96,0.99,0.85) : vscTextSec
+                    anchors.verticalCenter: parent.verticalCenter
+                    Behavior on color { ColorAnimation { duration: 80 } }
+                }
+            }
+            MouseArea { id: ntMA; anchors.fill: parent; hoverEnabled: true; onClicked: ntRoot.tabClicked() }
+        }
+    }
+
+    component SideSection: Item {
+        id: ssRoot
+        property string label: ""
+        property bool   open: true
+        property bool   canCollapse: true
+        signal toggled()
+
+        width: parent ? parent.width : 0
+        height: 26
+
+        Rectangle {
+            anchors.fill: parent
+            color: ssMA.containsMouse && ssRoot.canCollapse ? vscHover : "transparent"
+            Row {
+                anchors { left: parent.left; leftMargin: 8; verticalCenter: parent.verticalCenter }
+                spacing: 5
+                Text {
+                    visible: ssRoot.canCollapse
+                    text: ssRoot.open ? "▾" : "▸"
+                    font.pixelSize: 11; color: vscTextSec
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+                Text {
+                    text: ssRoot.label
+                    font.pixelSize: 12; font.bold: true
+                    font.letterSpacing: 1.5
+                    color: vscTextSec
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+            }
+            MouseArea {
+                id: ssMA; anchors.fill: parent; hoverEnabled: true
+                onClicked: if (ssRoot.canCollapse) ssRoot.toggled()
             }
         }
+    }
 
-        function onSelectedPortChanged() {
-            if (app.availablePorts.length > 0) {
-                const idx = app.availablePorts.indexOf(app.selectedPort)
-                portCombo.currentIndex = idx >= 0 ? idx : 0
+    component SideDivider: Item {
+        height: 1
+        Rectangle { anchors.fill: parent; color: vscBorder }
+    }
+
+    component TimerItem: Item {
+        id: tiRoot
+        property string label: ""
+        property int    vMs: 10
+        property int    wMs: 5
+        property bool   running: false
+        property bool   expanded: false
+
+        height: tiRoot.expanded ? 88 : 32
+        clip: true
+        Behavior on height { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+
+        Rectangle {
+            anchors.fill: parent
+            color: tiMA.containsMouse ? vscSelected : "transparent"
+            // 列表行（点击这里展开/折叠）
+            Item {
+                id: tiRow
+                anchors { left: parent.left; right: parent.right; top: parent.top }
+                height: 32
+                Row {
+                    anchors { left: parent.left; leftMargin: 14; verticalCenter: parent.verticalCenter }
+                    spacing: 6
+                    Rectangle {
+                        width: 5; height: 5; radius: 2.5
+                        color: tiRoot.running ? vscGreen : vscTextDim
+                        anchors.verticalCenter: parent.verticalCenter
+                        Behavior on color { ColorAnimation { duration: 200 } }
+                    }
+                    Text { text: tiRoot.label; font.pixelSize: 14; color: vscTextPri; anchors.verticalCenter: parent.verticalCenter }
+                }
+                // 启动/停止按钮
+                Rectangle {
+                    width: 44; height: 18; radius: 3
+                    anchors { right: parent.right; rightMargin: 8; verticalCenter: parent.verticalCenter }
+                    color: tiRoot.running ? Qt.rgba(0.31, 0.79, 0.69, 0.18) : Qt.rgba(0, 0.47, 0.80, 0.18)
+                    border.color: tiRoot.running ? vscGreen : vscAccent; border.width: 1
+                    Text {
+                        anchors.centerIn: parent
+                        text: tiRoot.running ? "停止" : "启动"
+                        font.pixelSize: 11; color: tiRoot.running ? vscGreen : vscAccent
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: { mouse.accepted = true; tiRoot.running = !tiRoot.running }
+                    }
+                }
+                // 仅顶部行响应展开/折叠，不覆盖下方输入区
+                MouseArea {
+                    id: tiMA; anchors.fill: parent; hoverEnabled: true
+                    onClicked: tiRoot.expanded = !tiRoot.expanded
+                }
+            }
+
+            // 展开：速度参数（TextInput 在此区域，不被 MouseArea 覆盖）
+            Row {
+                anchors { left: parent.left; right: parent.right; top: parent.top; topMargin: 36 }
+                anchors.leftMargin: 18; anchors.rightMargin: 8
+                spacing: 6
+                MiniField { fieldLabel: "v 间隔"; fieldValue: tiRoot.vMs + " ms"; width: (parent.width - 6) / 2 }
+                MiniField { fieldLabel: "w 间隔"; fieldValue: tiRoot.wMs + " ms"; width: (parent.width - 6) / 2 }
             }
         }
+    }
 
-        function onBaudRateChanged() {
-            syncCombo(baudCombo, baudRates, app.baudRate)
-            baudCombo.editText = String(app.baudRate)
-        }
+    component MiniField: Item {
+        id: mfRoot
+        property string fieldLabel: ""
+        property string fieldValue: ""
+        signal committed(string val)
+        height: 44
 
-        function onDataBitsChanged() {
-            syncCombo(dataBitsCombo, dataBitsOptions, app.dataBits)
-        }
+        // 同步外部值到编辑框（仅在未聚焦时，避免打断输入）
+        onFieldValueChanged: { if (!mfTi.activeFocus) mfTi.text = fieldValue }
+        Component.onCompleted: mfTi.text = fieldValue
 
-        function onStopBitsChanged() {
-            syncCombo(stopBitsCombo, stopBitsOptions, app.stopBits)
-        }
-
-        function onParityChanged() {
-            parityCombo.currentIndex = app.parity
-        }
-
-        function onFlowControlChanged() {
-            flowCombo.currentIndex = app.flowControl
-        }
-
-        function onLineEndingChanged() {
-            lineEndingCombo.currentIndex = app.lineEnding
-        }
-
-        function onPeriodicIntervalMsChanged() {
-            periodicIntervalBox.value = app.periodicIntervalMs
-        }
-
-        function onPeriodicActiveChanged() {
-            periodicSendCheck.checked = app.periodicActive
-        }
-
-        function onComposeModeChanged() {
-            hexSendCheck.checked = app.composeMode === 1
-        }
-
-        function onWorkspacePathChanged() {
-            workspaceField.text = app.workspacePath
-        }
-
-        function onLogExportPathChanged() {
-            logPathField.text = app.logExportPath
-        }
-
-        function onPacketSchemaPathChanged() {
-            packetSchemaPathField.text = app.packetSchemaPath
-        }
-
-        function onPacketSchemaNameChanged() {
-            packetNameField.text = app.packetSchemaName
-            refreshPacketPreview()
-        }
-
-        function onPacketHeaderTextChanged() {
-            packetHeaderField.text = app.packetHeaderText
-            refreshPacketPreview()
-        }
-
-        function onPacketFooterTextChanged() {
-            packetFooterField.text = app.packetFooterText
-            refreshPacketPreview()
-        }
-
-        function onPacketChecksumChanged() {
-            packetChecksumCombo.currentIndex = packetChecksumOptionIndex(app.packetChecksum)
-            refreshPacketPreview()
-        }
-
-        function onPacketSchemaLoadedChanged() {
-            refreshPacketPreview()
+        Column {
+            anchors.fill: parent; spacing: 2
+            Row {
+                spacing: 5
+                Text { text: mfRoot.fieldLabel; font.pixelSize: 11; color: vscTextSec; anchors.verticalCenter: parent.verticalCenter }
+                // 聚焦时显示提示
+                Text {
+                    visible: mfTi.activeFocus
+                    text: "↵ 回车确认"
+                    font.pixelSize: 9; color: vscAccent; opacity: 0.8
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+            }
+            Rectangle {
+                width: parent.width; height: 24; radius: 3
+                color: mfTi.activeFocus ? Qt.rgba(0.35,0.65,1,0.08) : vscInput
+                border.color: mfTi.activeFocus ? vscAccent : vscBorder; border.width: 1
+                Behavior on border.color { ColorAnimation { duration: 100 } }
+                TextInput {
+                    id: mfTi
+                    anchors { left: parent.left; right: parent.right; leftMargin: 6; rightMargin: 6; verticalCenter: parent.verticalCenter }
+                    font.pixelSize: 13; color: vscTextPri
+                    selectByMouse: true; selectedTextColor: "white"; selectionColor: vscAccent
+                    Keys.onReturnPressed:  { mfRoot.committed(text); focus = false }
+                    Keys.onEnterPressed:   { mfRoot.committed(text); focus = false }
+                    Keys.onEscapePressed:  { text = mfRoot.fieldValue; focus = false }  // Esc 取消
+                }
+            }
         }
     }
 
-    Connections {
-        target: app.logModel
+    component CmdItem: Item {
+        id: ciRoot
+        property string label: ""
+        property bool   expanded: false
+        signal itemClicked()
 
-        function onCountChanged() {
-            logView.positionViewAtEnd()
+        height: ciRoot.expanded ? 90 : 32
+        clip: true
+        Behavior on height { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+
+        Rectangle {
+            anchors.fill: parent
+            color: ciMA.containsMouse ? vscSelected : "transparent"
+
+            MouseArea { id: ciMA; anchors.fill: parent; hoverEnabled: true; z: -1; onClicked: ciRoot.itemClicked() }
+
+            // 列表行
+            Item {
+                anchors { left: parent.left; right: parent.right; top: parent.top }
+                height: 32
+                Row {
+                    anchors { left: parent.left; leftMargin: 14; verticalCenter: parent.verticalCenter }
+                    spacing: 5
+                    Text {
+                        text: ciRoot.expanded ? "▾" : "▸"
+                        font.pixelSize: 11; color: vscTextSec
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                    Text { text: ciRoot.label; font.pixelSize: 14; color: vscTextPri; anchors.verticalCenter: parent.verticalCenter }
+                }
+                // 发送按钮（hover 时显示）
+                Rectangle {
+                    visible: ciMA.containsMouse
+                    width: 36; height: 18; radius: 3; color: vscAccent
+                    anchors { right: parent.right; rightMargin: 8; verticalCenter: parent.verticalCenter }
+                    Text { anchors.centerIn: parent; text: "发送"; font.pixelSize: 11; color: "white" }
+                    MouseArea { anchors.fill: parent; onClicked: { mouse.accepted = true; ciRoot.itemClicked() } }
+                }
+            }
+
+            // 展开：时间戳设置
+            Column {
+                anchors { left: parent.left; right: parent.right; top: parent.top; topMargin: 36 }
+                anchors.leftMargin: 18; anchors.rightMargin: 8
+                spacing: 4
+                Text { text: "时间戳"; font.pixelSize: 11; color: vscTextSec }
+                Rectangle {
+                    width: parent.width; height: 24; radius: 3
+                    color: vscInput; border.color: vscBorder; border.width: 1
+                    Row {
+                        anchors { left: parent.left; leftMargin: 6; verticalCenter: parent.verticalCenter }
+                        spacing: 6
+                        Text { text: "自动"; font.pixelSize: 13; color: vscTextPri; anchors.verticalCenter: parent.verticalCenter }
+                        Rectangle { width: 1; height: 12; color: vscBorder; anchors.verticalCenter: parent.verticalCenter }
+                        Text { text: "1748438400"; font.pixelSize: 12; color: vscTextSec; font.family: "monospace"; anchors.verticalCenter: parent.verticalCenter }
+                    }
+                }
+            }
+
         }
     }
 
-    Connections {
-        target: app.packetFieldModel
+    component ModeChip: Rectangle {
+        id: mcRoot
+        property string label: ""
+        property bool   active: false
+        height: 18; width: mcLbl.width + 10; radius: 2
+        color:        mcRoot.active ? vscAccent : "transparent"
+        border.color: mcRoot.active ? vscAccent : vscBorder; border.width: 1
+        Text { id: mcLbl; anchors.centerIn: parent; text: mcRoot.label; font.pixelSize: 12; color: mcRoot.active ? "white" : vscTextSec }
+    }
 
-        function onCountChanged() {
-            refreshPacketPreview()
+    component PortSettingRow: Rectangle {
+        id: psrRoot
+        property string label: ""
+        property string value: ""
+        height: 46; radius: 4
+        color: psrMA.containsMouse ? vscSelected : vscInput
+        border.color: vscBorder; border.width: 1
+        Behavior on color { ColorAnimation { duration: 100 } }
+        Column {
+            anchors { left: parent.left; leftMargin: 8; verticalCenter: parent.verticalCenter }
+            spacing: 2
+            Text { text: psrRoot.label; font.pixelSize: 12; color: vscTextSec }
+            Text { text: psrRoot.value; font.pixelSize: 14; color: vscTextPri }
+        }
+        Text {
+            anchors { right: parent.right; rightMargin: 8; verticalCenter: parent.verticalCenter }
+            text: "▾"; font.pixelSize: 11; color: vscTextDim
+        }
+        MouseArea { id: psrMA; anchors.fill: parent; hoverEnabled: true }
+    }
+
+    // ── DataCard：数据卡片容器 ──────────────────────────────────────────────────
+    // 用法：DataCard { title: "xxx"; cardWidth: 220; DataField { ... } DataField { ... } }
+    component DataCard: Rectangle {
+        id: dcRoot
+        property string title: ""
+        property int cardWidth: 220
+        default property alias content: dcBody.data
+
+        width: cardWidth
+        height: dcTitle.height + dcBody.implicitHeight + 32
+        radius: 6
+        color: vscSidebar
+        border.color: vscBorder
+        border.width: 1
+
+        Text {
+            id: dcTitle
+            anchors { top: parent.top; left: parent.left; topMargin: 10; leftMargin: 12 }
+            text: dcRoot.title
+            font.pixelSize: 12; font.bold: true; font.letterSpacing: 1
+            color: vscAccent
         }
 
-        function onDataChanged() {
-            refreshPacketPreview()
-        }
-
-        function onModelReset() {
-            refreshPacketPreview()
+        Column {
+            id: dcBody
+            anchors { top: dcTitle.bottom; left: parent.left; right: parent.right; topMargin: 8; leftMargin: 12; rightMargin: 12 }
+            spacing: 5
         }
     }
 
-    Component.onCompleted: {
-        if (app.availablePorts.length > 0) {
-            const idx = app.availablePorts.indexOf(app.selectedPort)
-            portCombo.currentIndex = idx >= 0 ? idx : 0
+    // ── DataField：标签 + 值 一行 ──────────────────────────────────────────────
+    component DataField: Row {
+        property string label: ""
+        property string value: ""
+        property bool   isError: false
+        spacing: 0
+        Text {
+            width: 80; text: label
+            font.pixelSize: 13; color: vscTextSec
         }
-        syncCombo(baudCombo, baudRates, app.baudRate)
-        baudCombo.editText = String(app.baudRate)
-        syncCombo(dataBitsCombo, dataBitsOptions, app.dataBits)
-        syncCombo(stopBitsCombo, stopBitsOptions, app.stopBits)
-        parityCombo.currentIndex = app.parity
-        flowCombo.currentIndex = app.flowControl
-        lineEndingCombo.currentIndex = app.lineEnding
-        periodicIntervalBox.value = app.periodicIntervalMs
-        packetChecksumCombo.currentIndex = packetChecksumOptionIndex(app.packetChecksum)
-        refreshPacketPreview()
+        Text {
+            text: value
+            font.pixelSize: 13; font.family: "monospace"
+            color: isError ? vscRed : vscTextPri
+        }
+    }
+
+    // ── FlagDot：位标志指示器 ───────────────────────────────────────────────────
+    component FlagDot: Row {
+        property bool   active: false
+        property string label: ""
+        property bool   isError: false
+        spacing: 5
+        Rectangle {
+            width: 7; height: 7; radius: 3.5
+            anchors.verticalCenter: parent.verticalCenter
+            color: active ? (isError ? vscRed : vscGreen) : vscTextDim
+            Behavior on color { ColorAnimation { duration: 150 } }
+        }
+        Text {
+            text: label
+            font.pixelSize: 12; font.family: "monospace"
+            color: active ? (isError ? vscRed : vscTextPri) : vscTextSec
+            Behavior on color { ColorAnimation { duration: 150 } }
+        }
+    }
+
+    // ── DashCard：带彩色 accent 竖线的数据卡片 ────────────────────────────────
+    component DashCard: Item {
+        id: dcRoot
+        property int    cw: 220
+        property color  accent: vscAccent
+        property string title: ""
+        default property alias dcContent: dcBody.data
+
+        width: cw
+        height: dcCard.height
+
+        // 阴影层（偏移矩形模拟）
+        Rectangle {
+            anchors { fill: dcCard; topMargin: -1; leftMargin: -1; rightMargin: -1; bottomMargin: -3 }
+            radius: 7; color: "transparent"
+            border.color: Qt.rgba(0, 0, 0, 0.5); border.width: 1
+            z: 0
+        }
+        Rectangle {
+            anchors { fill: dcCard; topMargin: 2; leftMargin: 1; rightMargin: 1; bottomMargin: -4 }
+            radius: 7; color: Qt.rgba(0, 0, 0, 0.25)
+            z: 0
+        }
+
+        Rectangle {
+            id: dcCard
+            anchors { top: parent.top; left: parent.left; right: parent.right }
+            height: dcTitleTxt.height + dcBody.implicitHeight + 38
+            radius: 6; clip: true
+            color: vscSidebar
+            border.color: dcRoot.accent === vscAccent ? vscCardBorder : Qt.rgba(dcRoot.accent.r, dcRoot.accent.g, dcRoot.accent.b, 0.5)
+            border.width: 1
+            z: 1
+
+            Rectangle {
+                anchors { top: parent.top; bottom: parent.bottom; left: parent.left }
+                width: 3; color: dcRoot.accent
+            }
+            Text {
+                id: dcTitleTxt
+                anchors { top: parent.top; left: parent.left; topMargin: 10; leftMargin: 14 }
+                text: dcRoot.title
+                font.pixelSize: 11; font.bold: true; font.letterSpacing: 1.2
+                color: dcRoot.accent
+            }
+            Column {
+                id: dcBody
+                anchors { top: dcTitleTxt.bottom; left: parent.left; right: parent.right
+                          topMargin: 10; leftMargin: 14; rightMargin: 14 }
+                spacing: 0
+            }
+        }
+    }
+
+    // ── MiniBar：响应式进度条 ─────────────────────────────────────────────────
+    component MiniBar: Rectangle {
+        property real  ratio: 0.5
+        property color barColor: vscGreen
+        height: 4; radius: 2; color: vscInput; clip: true
+        Rectangle {
+            width: parent.width * Math.max(0.0, Math.min(1.0, ratio))
+            height: parent.height; radius: 2
+            color: parent.barColor
+            Behavior on width { NumberAnimation { duration: 120 } }
+            Behavior on color { ColorAnimation  { duration: 200 } }
+        }
+    }
+
+    // ── MotorCard：单电机完整展示卡 ──────────────────────────────────────────
+    component MotorCard: Item {
+        id: mcRoot
+        property int    cw: 200
+        property color  accent: "#9b59b6"
+        property string title: ""
+        property int    spd: 0
+        property int    cur: 0
+        property int    enc: 0
+        property int    flt: 0
+        property int    maxSpd: 500
+        property int    maxCur: 1000
+
+        width: cw
+        height: mcCard.height
+
+        // 阴影层
+        Rectangle {
+            anchors { fill: mcCard; topMargin: 2; leftMargin: 1; rightMargin: 1; bottomMargin: -4 }
+            radius: 7; color: Qt.rgba(0, 0, 0, 0.30); z: 0
+        }
+
+        Rectangle {
+            id: mcCard
+            anchors { top: parent.top; left: parent.left; right: parent.right }
+            height: mcBody.implicitHeight + 48
+            radius: 6; clip: true
+            color: flt !== 0 ? Qt.rgba(0.96, 0.33, 0.24, 0.08) : vscSidebar
+            border.color: flt !== 0 ? vscRed : Qt.rgba(mcRoot.accent.r, mcRoot.accent.g, mcRoot.accent.b, 0.55)
+            border.width: 1
+            Behavior on color { ColorAnimation { duration: 200 } }
+
+        Rectangle {
+            anchors { top: parent.top; bottom: parent.bottom; left: parent.left }
+            width: 3
+            color: flt !== 0 ? vscRed : mcRoot.accent
+            Behavior on color { ColorAnimation { duration: 200 } }
+        }
+        Text {
+            id: mcTitle
+            anchors { top: parent.top; left: parent.left; topMargin: 10; leftMargin: 14 }
+            text: mcRoot.title
+            font.pixelSize: 11; font.bold: true; font.letterSpacing: 1
+            color: flt !== 0 ? vscRed : mcRoot.accent
+            Behavior on color { ColorAnimation { duration: 200 } }
+        }
+        Column {
+            id: mcBody
+            anchors { top: mcTitle.bottom; left: parent.left; right: parent.right
+                      topMargin: 10; leftMargin: 14; rightMargin: 14 }
+            spacing: 8
+
+            // Speed
+            Column {
+                width: parent.width; spacing: 4
+                Row {
+                    width: parent.width
+                    Text { text: "Speed"; font.pixelSize: 10; color: vscTextSec; width: parent.width - spdDir.width }
+                    Text {
+                        id: spdDir
+                        text: spd > 0 ? "↑" : spd < 0 ? "↓" : "—"
+                        font.pixelSize: 13
+                        color: spd > 0 ? vscGreen : spd < 0 ? "#e8a55a" : vscTextDim
+                        Behavior on color { ColorAnimation { duration: 100 } }
+                    }
+                }
+                Row {
+                    spacing: 4
+                    Text { text: spd; font.pixelSize: 20; font.bold: true; font.family: "monospace"; color: vscTextPri }
+                    Text { text: "rpm"; font.pixelSize: 10; color: vscTextDim; anchors.bottom: parent.bottom; anchors.bottomMargin: 2 }
+                }
+            }
+
+            // Current
+            Column {
+                width: parent.width; spacing: 4
+                Text { text: "Current"; font.pixelSize: 10; color: vscTextSec }
+                Row {
+                    spacing: 4
+                    Text {
+                        text: cur; font.pixelSize: 16; font.bold: true; font.family: "monospace"
+                        color: cur > maxCur * 0.8 ? vscRed : vscTextPri
+                        Behavior on color { ColorAnimation { duration: 150 } }
+                    }
+                    Text { text: "mA"; font.pixelSize: 10; color: vscTextDim; anchors.bottom: parent.bottom; anchors.bottomMargin: 2 }
+                }
+            }
+
+            // Encoder
+            Row {
+                spacing: 8
+                Text { text: "Enc"; font.pixelSize: 10; color: vscTextSec; anchors.verticalCenter: parent.verticalCenter }
+                Text { text: enc; font.pixelSize: 13; font.family: "monospace"; color: vscTextSec }
+            }
+
+            // Fault badge
+            Rectangle {
+                width: parent.width; height: 24; radius: 4
+                color: flt !== 0 ? Qt.rgba(0.96, 0.33, 0.24, 0.15) : Qt.rgba(0.31, 0.79, 0.69, 0.10)
+                border.color: flt !== 0 ? vscRed : vscGreen; border.width: 1
+                Behavior on color { ColorAnimation { duration: 200 } }
+                Row {
+                    anchors.centerIn: parent; spacing: 6
+                    Rectangle {
+                        width: 6; height: 6; radius: 3; anchors.verticalCenter: parent.verticalCenter
+                        color: flt !== 0 ? vscRed : vscGreen
+                        Behavior on color { ColorAnimation { duration: 200 } }
+                    }
+                    Text {
+                        text: flt !== 0 ? "FAULT  0x" + flt.toString(16).toUpperCase() : "OK"
+                        font.pixelSize: 11; font.bold: true
+                        color: flt !== 0 ? vscRed : vscGreen
+                        Behavior on color { ColorAnimation { duration: 200 } }
+                    }
+                }
+            }
+            }
+        }
+    }
+
+    // ── ImuField：IMU 数值行 ──────────────────────────────────────────────────
+    component ImuField: Row {
+        property string lbl: ""
+        property string val: ""
+        property string unt: ""
+        spacing: 6
+        Text { text: lbl; font.pixelSize: 11; color: vscTextSec; width: 62; font.family: "monospace" }
+        Text { text: val; font.pixelSize: 15; font.bold: true; font.family: "monospace"; color: vscTextPri }
+        Text { text: unt; font.pixelSize: 10; color: vscTextDim; anchors.bottom: parent.bottom; anchors.bottomMargin: 2 }
+    }
+
+    // ── FlagBadge：标志 badge 指示器 ─────────────────────────────────────────
+    component FlagBadge: Rectangle {
+        property string lbl: ""
+        property bool   act: false
+        property bool   err: false
+        height: 26; radius: 4; width: fbLbl.width + 22
+        color: act ? (err ? Qt.rgba(0.96, 0.33, 0.24, 0.15) : Qt.rgba(0.31, 0.79, 0.69, 0.12)) : vscInput
+        border.color: act ? (err ? vscRed : vscGreen) : vscBorder; border.width: 1
+        Behavior on color { ColorAnimation { duration: 150 } }
+        Row {
+            anchors.centerIn: parent; spacing: 6
+            Rectangle {
+                width: 7; height: 7; radius: 3.5; anchors.verticalCenter: parent.verticalCenter
+                color: act ? (err ? vscRed : vscGreen) : vscTextDim
+                Behavior on color { ColorAnimation { duration: 150 } }
+            }
+            Text {
+                id: fbLbl; text: lbl
+                font.pixelSize: 11; font.family: "monospace"
+                color: act ? (err ? vscRed : vscTextPri) : vscTextSec
+                Behavior on color { ColorAnimation { duration: 150 } }
+            }
+        }
     }
 }

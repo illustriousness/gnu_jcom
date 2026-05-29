@@ -1,0 +1,29 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"clangd.arguments": [
+			"--compile-commands-dir=build",
+			"--header-insertion=never"
+		],
+	},
+	"tasks": {
+		"version": "2.0.0",
+		"tasks": [
+			{
+				"label": "build",
+				// "command": " cmake -G Ninja -S . -B build && cmake --build build -j$(nproc) ",
+				"command": " cmake --fresh -G Ninja -S . -B build && cmake --build build -j$(nproc) ",
+				"type": "shell",
+				"args": [],
+				"presentation": {
+					"close": true
+				},
+				"group": "build"
+			}
+		]
+	}
+}
