@@ -47,6 +47,10 @@ qt_add_executable(qcom
     protocol_c/src/gnu_soc_proto.c
 )
 
+set_target_properties(qcom PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
 # 把 QML 文件打包进 qcom 的 Qt 资源系统，并声明 QML 模块名 Qcom。
 qt_add_qml_module(qcom
     URI Qcom
