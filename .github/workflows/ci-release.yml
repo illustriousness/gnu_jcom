@@ -3,8 +3,7 @@ name: CI and Release
 on:
   push:
     branches:
-      - master
-      - main
+      - "**"
     tags:
       - "v*"
   pull_request:
@@ -84,12 +83,33 @@ jobs:
             }
           }
 
+      - name: Verify executable package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $exe = Join-Path $env:GITHUB_WORKSPACE "dist/${{ matrix.artifact_name }}/bin/qcom.exe"
+          if (-not (Test-Path $exe)) {
+            Write-Error "Missing executable $exe"
+            exit 1
+          }
+
       - name: Install (Unix)
         if: runner.os != 'Windows'
         shell: bash
         run: |
           package_dir="$PWD/dist/${{ matrix.artifact_name }}"
           cmake --install build --config Release --prefix "$package_dir"
+
+      - name: Verify executable package (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          exe="$PWD/dist/${{ matrix.artifact_name }}/bin/qcom"
+          if [ ! -x "$exe" ]; then
+            echo "Missing executable $exe" >&2
+            find "$PWD/dist/${{ matrix.artifact_name }}" -maxdepth 3 -type f -print >&2 || true
+            exit 1
+          fi
 
       - name: Archive package (Windows)
         if: runner.os == 'Windows'

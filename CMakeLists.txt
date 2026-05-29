@@ -11,11 +11,22 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # 导出 compile_commands.json，方便 clangd / VS Code 等工具做代码跳转。
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+option(GNU_JCOM_ENABLE_QT_DEPLOYMENT "Bundle Qt runtime dependencies during install." OFF)
+
+include(GNUInstallDirs)
+include(CTest)
+
 # 旧的普通 C++ 可执行文件入口，当前工程改用 Qt 的 qt_add_executable。
 # add_executable(quectel_com src/main.cpp)
 
 # 先查找并加载 Qt6 组件；否则下面的 qt_standard_project_setup 等命令不存在。
-find_package(Qt6 6.5 REQUIRED COMPONENTS Quick Qml QuickControls2 SerialPort)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Quick Qml QuickControls2 SerialPort)
+
+if(WIN32 AND MSVC)
+    set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION ${CMAKE_INSTALL_BINDIR})
+    set(CMAKE_INSTALL_UCRT_LIBRARIES TRUE)
+    include(InstallRequiredSystemLibraries)
+endif()
 
 # 使用 Qt 6.5 推荐的 QML 模块目录策略，避免 QTP0004 开发者 warning。
 qt_policy(SET QTP0004 NEW)
@@ -54,6 +65,8 @@ target_compile_definitions(qcom PRIVATE PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
 # 链接 Qt Quick/QML 运行所需库。
 target_link_libraries(qcom
     PRIVATE
+        Qt6::Core
+        Qt6::Gui
         Qt6::Quick
         Qt6::Qml
         Qt6::QuickControls2
@@ -62,3 +75,17 @@ target_link_libraries(qcom
 
 # 头文件路径：让 src/ 能找到 protocol_c/include/
 target_include_directories(qcom PRIVATE protocol_c/include)
+
+install(TARGETS qcom
+    BUNDLE DESTINATION .
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
+if(GNU_JCOM_ENABLE_QT_DEPLOYMENT AND (WIN32 OR APPLE))
+    qt_generate_deploy_qml_app_script(
+        TARGET qcom
+        OUTPUT_SCRIPT qcom_deploy_script
+        NO_UNSUPPORTED_PLATFORM_ERROR
+    )
+    install(SCRIPT ${qcom_deploy_script})
+endif()
